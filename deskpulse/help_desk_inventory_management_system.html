@@ -664,7 +664,7 @@
 
     // Normalises "#tk-4029", "tk4029" or "4029" to "TK-4029".
     function normalizeTicketCode(input) {
-        let s = String(input || '').trim().toUpperCase().replace(/^#/, '');
+        let s = String(input || '').replace(/\s+/g, '').toUpperCase().replace(/^#/, '');
         if (/^\d+$/.test(s)) s = 'TK-' + s;
         const m = s.match(/^TK-?(\d+)$/);
         return m ? 'TK-' + m[1] : s;
@@ -1086,8 +1086,11 @@
             const inUse = state.assets.filter((a) => a.status === 'In Use').length;
             const stock = state.assets.filter((a) => a.status === 'Stock').length;
             const overdue = active.filter((t) => slaInfo(t).breached).length;
-            const withinSla = state.tickets.filter((t) => !slaInfo(t).breached).length;
-            const pct = state.tickets.length ? Math.round((withinSla / state.tickets.length) * 1000) / 10 : 100;
+            // Compliance only counts tickets whose SLA outcome is known: finished ones, plus open
+            // ones already past due. Open tickets still inside the window would inflate the rate.
+            const measured = state.tickets.filter((t) => isDone(t) || slaInfo(t).breached);
+            const onTime = measured.filter((t) => !slaInfo(t).breached).length;
+            const pct = measured.length ? Math.round((onTime / measured.length) * 1000) / 10 : 100;
             cards = h`<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 ${metricCard({ label: 'Chamados ativos', value: active.length, icon: 'fa-ticket', tone: 'blue', sub: unassigned ? unassigned + ' sem responsável' : 'Todos os chamados atribuídos', subTone: unassigned ? 'bad' : 'good' })}
                 ${metricCard({ label: 'Problemas críticos', value: critical, icon: 'fa-triangle-exclamation', tone: 'rose', sub: critical ? 'Exige atenção imediata' : 'Nenhum incidente crítico', subTone: critical ? 'bad' : 'good' })}
@@ -1250,7 +1253,7 @@
                                     <td class="td text-xs">${u.twoFactor ? h`<span class="text-emerald-700 dark:text-emerald-400 font-semibold"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Ativado</span>` : h`<span class="muted">Desativado</span>`}</td>
                                     <td class="td pr-0 text-right whitespace-nowrap space-x-1">
                                         <button type="button" data-action="open-user" data-id="${u.id}" class="btn btn-sm btn-ghost" aria-label="Editar ${u.name}"><i class="fa-solid fa-pen" aria-hidden="true"></i></button>
-                                        <button type="button" data-action="delete-user" data-id="${u.id}" class="btn btn-sm btn-ghost-danger" aria-label="Excluir ${u.name}" ${u.id === me.id ? 'disabled title="Você não pode excluir a própria conta"' : ''}><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
+                                        <button type="button" data-action="delete-user" data-id="${u.id}" class="btn btn-sm btn-ghost-danger" aria-label="Excluir ${u.name}" ${u.id === me.id ? raw('disabled title="Você não pode excluir a própria conta"') : ''}><i class="fa-solid fa-trash" aria-hidden="true"></i></button>
                                     </td>
                                 </tr>`)}
                         </tbody>
@@ -1369,7 +1372,7 @@
 
             <div class="pt-2">
                 <h3 class="field-label mb-3">Linha do tempo e notas</h3>
-                <div id="td-timeline" class="max-h-60 overflow-y-auto pr-2">${timelineList(items)}</div>
+                <div id="td-timeline" tabindex="0" aria-label="Linha do tempo do chamado" class="max-h-60 overflow-y-auto pr-2">${timelineList(items)}</div>
             </div>
 
             ${staff || t.status !== 'Closed' ? h`
@@ -1457,7 +1460,7 @@
         const email = (selfOnly ? u.email : val('#tf-email')).toLowerCase();
         const subject = val('#tf-subject');
         const description = val('#tf-desc');
-        if (!name || !subject || !description) { showToast('Preencha todos os campos obrigatórios.', 'error'); return; }
+        if (!name || !email || !subject || !description) { showToast('Preencha todos os campos obrigatórios.', 'error'); return; }
 
         const category = CATEGORIES.some(([v]) => v === $('#tf-category').value) ? $('#tf-category').value : 'Other';
         const priority = PRIORITIES.includes($('#tf-priority').value) ? $('#tf-priority').value : 'Medium';
@@ -1517,9 +1520,11 @@
         const t = findTicket(id);
         if (!t || !can('manageTickets')) return;
         const next = userId === '' ? null : Number(userId);
-        const target = next === null ? null : state.users.find((u) => u.id === next && (u.role === 'Admin' || u.role === 'Technician'));
-        if (next !== null && !target) return;
         if ((t.assigneeId ?? null) === next) return;
+        // Only active staff can receive new assignments (the select lists an inactive current assignee
+        // so it stays visible, but picking someone must not hand work to a disabled account).
+        const target = next === null ? null : state.users.find((u) => u.id === next && u.status === 'Active' && (u.role === 'Admin' || u.role === 'Technician'));
+        if (next !== null && !target) { refresh(); return; }
         t.assigneeId = next;
         logEvent(t, target ? 'Atribuído a ' + target.name : 'Atribuição removida');
         saveData(); refresh();
