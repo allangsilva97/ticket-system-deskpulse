@@ -1,0 +1,9 @@
+fastapi==0.162.7
+starlette==1.10.0   # pinned: older releases have known DoS / path-handling CVEs
+uvicorn[standard]==0.54.0
+sqlalchemy==2.0.57
+pydantic[email]==2.14.3
+
+# tests
+pytest==9.2.0
+httpx==0.28.1

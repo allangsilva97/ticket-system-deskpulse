@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local database (tickets, users, password hashes, session hashes)
+tickets.db
+tickets.db-wal
+tickets.db-shm
+*.db
+*.sqlite
+*.sqlite3
+
+# Secrets: never commit these
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Local tool config and logs
+.claude/
+*.log
+
+# Editors / OS
+.DS_Store
+Thumbs.db
