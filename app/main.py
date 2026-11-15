@@ -1,8 +1,9 @@
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy.exc import DataError
 
 from app import config
 from app.database import init_db
@@ -49,6 +50,14 @@ async def security_headers(request: Request, call_next):
     if request.url.scheme == "https":
         headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
     return response
+
+
+@app.exception_handler(OverflowError)
+@app.exception_handler(DataError)
+async def out_of_range(_request: Request, _exc: Exception):
+    # An id like 99999999999999999999 passes int validation but doesn't fit a database integer:
+    # SQLite raises OverflowError, PostgreSQL a DataError. Either way it's bad input, not a crash.
+    return JSONResponse(status_code=422, content={"detail": "A numeric value is out of range"})
 
 
 for module in (auth, users, companies, tickets, stats):

@@ -62,7 +62,7 @@ class TokenOut(BaseModel):
 
 class MeUpdate(_In):
     name: Optional[Name] = None
-    current_password: Optional[str] = None
+    current_password: Optional[Annotated[str, StringConstraints(max_length=128)]] = None  # same cap as login
     new_password: Optional[Password] = None
 
     _nn = field_validator("name")(_not_null)

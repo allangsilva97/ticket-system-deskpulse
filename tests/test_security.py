@@ -87,3 +87,24 @@ def test_docs_page_keeps_working_without_the_strict_policy(client):
     r = client.get("/docs")
     assert r.status_code == 200
     assert "Content-Security-Policy" not in r.headers
+
+
+def test_huge_ids_are_rejected_not_a_server_error(admin):
+    big = "99999999999999999999"  # valid int, but too large for a database integer
+    for method, url, body in (
+        ("get", f"/api/tickets/{big}", None),
+        ("get", f"/api/companies/{big}", None),
+        ("get", f"/api/tickets?company_id={big}", None),
+        ("get", f"/api/tickets?assignee={big}", None),
+        ("patch", f"/api/users/{big}", {"name": "x"}),
+        ("post", "/api/tickets/bulk", {"ids": [int(big)], "status": "closed"}),
+    ):
+        r = getattr(admin, method)(url, json=body) if body else getattr(admin, method)(url)
+        assert r.status_code == 422, (url, r.status_code)
+
+
+def test_login_password_is_case_sensitive(admin):
+    assert admin.post("/api/auth/login", json={"email": ADMIN["email"], "password": ADMIN["password"]}).status_code == 200
+    assert admin.post("/api/auth/login", json={"email": ADMIN["email"], "password": ADMIN["password"].upper()}).status_code == 401
+    # The email is not: addresses are compared case-insensitively
+    assert admin.post("/api/auth/login", json={"email": ADMIN["email"].upper(), "password": ADMIN["password"]}).status_code == 200

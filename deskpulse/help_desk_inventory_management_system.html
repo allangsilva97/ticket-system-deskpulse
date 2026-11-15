@@ -4,10 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
-    <!-- Content-Security-Policy: scripts only from this page and the Tailwind CDN; no network calls, no forms posted,
-         no plugins, no <base>. 'unsafe-inline' is needed by the inline scripts/styles of this single-file prototype;
-         in production, move them to files and drop it. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <!-- Content-Security-Policy: scripts only from this page, the Tailwind CDN and cdnjs (QR code library, pinned
+         with SRI); no network calls, no forms posted, no plugins, no <base>. 'unsafe-inline' is needed by the inline
+         scripts/styles of this single-file prototype; in production, move them to files and drop it. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
     <meta name="referrer" content="no-referrer">
     <meta name="description" content="DeskPulse - demonstração de help desk de TI e inventário de ativos (CMDB).">
     <title>DeskPulse - Help Desk de TI &amp; Inventário de Ativos</title>
@@ -43,6 +43,9 @@
             }
         };
     </script>
+
+    <!-- QR code generator for the 2FA setup (optional: without it the secret is shown as text) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
 
     <!-- Font Awesome Free icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
@@ -131,7 +134,7 @@
         </main>
 
         <footer class="text-center text-xs text-slate-600 dark:text-slate-400 py-4 px-4 border-t border-slate-200 dark:border-slate-800">
-            Ambiente de demonstração &mdash; os dados ficam apenas neste navegador (localStorage). Não há autenticação real nem envio de e-mails.
+            Ambiente de demonstração &mdash; os dados ficam apenas neste navegador (localStorage). Senhas e 2FA são verificados localmente, sem servidor; nenhum e-mail é enviado.
         </footer>
     </div>
 
@@ -146,10 +149,24 @@
                     <i class="fa-solid fa-lock" aria-hidden="true"></i>
                 </div>
                 <h3 id="login-title" class="text-xl font-bold">Entrar no DeskPulse</h3>
-                <p class="text-sm muted mt-1">Modo demonstração: escolha uma conta de demonstração ou digite o e-mail de um usuário existente. Qualquer senha não vazia é aceita.</p>
+                <p class="text-sm muted mt-1">Modo demonstração: as contas de exemplo usam a senha <code class="font-mono font-semibold text-brand-700 dark:text-brand-300">Demo@1234</code>. A senha diferencia maiúsculas de minúsculas.</p>
             </div>
-            <form data-form="login" class="space-y-4">
-                <p id="login-error" class="hidden p-3 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300 text-sm" role="alert"></p>
+            <p id="login-error" class="hidden mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300 text-sm" role="alert"></p>
+            <form id="login-step2" data-form="login-2fa" class="hidden space-y-4">
+                <div class="p-3 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-sm text-brand-800 dark:text-brand-200 flex gap-2">
+                    <i class="fa-solid fa-mobile-screen-button mt-0.5" aria-hidden="true"></i>
+                    <span>Digite o código de 6 dígitos do seu aplicativo autenticador.</span>
+                </div>
+                <div>
+                    <label for="login-code" class="field-label">Código de verificação</label>
+                    <input type="text" id="login-code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" class="field font-mono text-center text-lg tracking-[0.4em]">
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" data-action="login-back" class="btn btn-secondary">Voltar</button>
+                    <button type="submit" class="btn btn-primary flex-1 py-3">Verificar e entrar</button>
+                </div>
+            </form>
+            <form id="login-step1" data-form="login" class="space-y-4">
                 <div>
                     <label for="login-role-preset" class="field-label">Conta de demonstração</label>
                     <select id="login-role-preset" data-change="role-preset" class="field">
@@ -164,7 +181,7 @@
                 </div>
                 <div>
                     <label for="login-password" class="field-label">Senha</label>
-                    <input type="password" id="login-password" value="password123" required autocomplete="current-password" class="field">
+                    <input type="password" id="login-password" required maxlength="128" autocomplete="current-password" class="field">
                 </div>
                 <div class="flex items-center justify-between text-xs pt-1">
                     <label class="flex items-center gap-2 cursor-pointer muted">
@@ -172,7 +189,7 @@
                     </label>
                     <button type="button" data-action="forgot-password" class="link">Esqueceu a senha?</button>
                 </div>
-                <button type="submit" class="btn btn-primary w-full py-3">Entrar</button>
+                <button type="submit" id="login-submit" class="btn btn-primary w-full py-3">Entrar</button>
             </form>
         </div>
     </div>
@@ -345,6 +362,14 @@
                         <select id="usr-status" class="field"></select>
                     </div>
                 </div>
+                <div>
+                    <label for="usr-password" class="field-label">Senha</label>
+                    <input type="password" id="usr-password" minlength="8" maxlength="128" autocomplete="new-password" class="field">
+                    <p id="usr-password-hint" class="text-xs muted mt-1"></p>
+                </div>
+                <label id="usr-2fa-reset-wrap" class="hidden flex items-center gap-2 text-xs muted cursor-pointer w-fit">
+                    <input type="checkbox" id="usr-2fa-reset" class="accent-brand-600 w-4 h-4"> Redefinir o 2FA (o usuário precisará configurá-lo de novo)
+                </label>
                 <p id="usr-self-note" class="hidden text-xs muted"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Você não pode alterar seu próprio perfil ou status.</p>
                 <div class="flex justify-end gap-3 pt-2">
                     <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal="user-modal">Cancelar</button>
@@ -448,10 +473,95 @@
         }
     }
 
+    // --- Crypto: password hashing (PBKDF2) and TOTP 2FA (RFC 6238), all with the browser's WebCrypto ---
+    // Checked against the RFC 4648 (base32) and RFC 6238 (TOTP) test vectors.
+    // Everything still runs in the browser: this makes the prototype behave like the real thing, but a
+    // production system must hash, store and verify on the server (see the README of the API).
+    const subtle = window.crypto && window.crypto.subtle;
+    const hasCrypto = !!subtle;
+    const textEnc = new TextEncoder();
+    const toB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+    const fromB64 = (s) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    function safeEqual(a, b) {
+        a = String(a); b = String(b);
+        if (a.length !== b.length) return false;
+        let diff = 0;
+        for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+        return diff === 0;
+    }
+
+    const PBKDF2_ITERATIONS = 150000;
+    // The password is used exactly as typed (never trimmed or lower-cased), so the check is case sensitive.
+    async function hashPassword(password, salt = crypto.getRandomValues(new Uint8Array(16)), iterations = PBKDF2_ITERATIONS) {
+        const key = await subtle.importKey('raw', textEnc.encode(password), 'PBKDF2', false, ['deriveBits']);
+        const bits = await subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, key, 256);
+        return { iter: iterations, salt: toB64(salt), hash: toB64(bits) };
+    }
+    async function verifyPassword(password, record) {
+        if (!record || !record.salt || !record.hash) return false;
+        const attempt = await hashPassword(password, fromB64(record.salt), record.iter || PBKDF2_ITERATIONS);
+        return safeEqual(attempt.hash, record.hash);
+    }
+
+    const B32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    function base32Encode(bytes) {
+        let bits = 0, val = 0, out = '';
+        for (const b of bytes) {
+            val = ((val << 8) | b) & 0xffff; bits += 8;
+            while (bits >= 5) { out += B32[(val >>> (bits - 5)) & 31]; bits -= 5; }
+        }
+        if (bits > 0) out += B32[(val << (5 - bits)) & 31];
+        return out;
+    }
+    function base32Decode(s) {
+        const clean = String(s).toUpperCase().replace(/[^A-Z2-7]/g, '');
+        let bits = 0, val = 0; const out = [];
+        for (const c of clean) {
+            val = ((val << 5) | B32.indexOf(c)) & 0xffff; bits += 5;
+            if (bits >= 8) { out.push((val >>> (bits - 8)) & 255); bits -= 8; }
+        }
+        return new Uint8Array(out);
+    }
+    const TOTP_STEP_SECONDS = 30;
+    async function hotp(keyBytes, counter) {
+        const key = await subtle.importKey('raw', keyBytes, { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+        const msg = new DataView(new ArrayBuffer(8));
+        msg.setUint32(0, Math.floor(counter / 2 ** 32)); msg.setUint32(4, counter >>> 0);
+        const mac = new Uint8Array(await subtle.sign('HMAC', key, msg.buffer));
+        const off = mac[mac.length - 1] & 15;
+        const bin = ((mac[off] & 0x7f) << 24) | (mac[off + 1] << 16) | (mac[off + 2] << 8) | mac[off + 3];
+        return String(bin % 1e6).padStart(6, '0');
+    }
+    const newTotpSecret = () => base32Encode(crypto.getRandomValues(new Uint8Array(20))); // 160 bits, as RFC 4226 recommends
+    // Returns the matching time step, or null. Accepts one step of clock drift either way, and refuses
+    // steps at or before `lastStep` so an intercepted code can't be replayed.
+    async function verifyTotp(secret, code, lastStep) {
+        code = String(code || '').replace(/\s+/g, '');
+        if (!secret || !/^\d{6}$/.test(code)) return null;
+        const key = base32Decode(secret);
+        const now = Math.floor(Date.now() / 1000 / TOTP_STEP_SECONDS);
+        for (const step of [now, now - 1, now + 1]) {
+            if (typeof lastStep === 'number' && step <= lastStep) continue;
+            if (safeEqual(await hotp(key, step), code)) return step;
+        }
+        return null;
+    }
+    const otpauthUri = (secret, email) =>
+        'otpauth://totp/' + encodeURIComponent('DeskPulse:' + email) + '?secret=' + secret + '&issuer=DeskPulse&algorithm=SHA1&digits=6&period=30';
+    function qrDataUrl(text) {
+        if (typeof window.qrcode !== 'function') return null; // library blocked or offline: the secret is still shown
+        try { const q = window.qrcode(0, 'M'); q.addData(text); q.make(); return q.createDataURL(5, 2); } catch (e) { return null; }
+    }
+    const groupSecret = (s) => s.replace(/(.{4})/g, '$1 ').trim();
+
     /* =====================================================================
        2. CONSTANTS
        ===================================================================== */
-    const DATA_KEY = 'deskpulse_data_v3';
+    const DATA_KEY = 'deskpulse_data_v3'; // key kept so existing demo data is migrated, not lost
+    const DATA_VERSION = 4;               // v4: password hashes + real TOTP secrets
+    const DEMO_PASSWORD = 'Demo@1234';
+    const LOGIN_MAX_FAILURES = 5;
+    const LOGIN_LOCK_MS = 60 * 1000;
     const SESSION_KEY = 'deskpulse_session_v2';
     const THEME_KEY = 'deskpulse_theme';
 
@@ -529,7 +639,8 @@
         return {
             ticketSearch: '', ticketStatus: 'all', ticketPriority: 'all',
             assetSearch: '', assetType: 'all', assetStatus: 'all',
-            openTicketId: null, lastCreated: null
+            openTicketId: null, lastCreated: null,
+            totpSetup: null // { userId, secret } while the 2FA enrollment is in progress
         };
     }
 
@@ -538,7 +649,7 @@
         const ago = (hours) => iso(Date.now() - hours * HOUR);
         const note = (author, text, hours, internal = false) => ({ author, text, at: ago(hours), internal });
         return {
-            v: 3,
+            v: DATA_VERSION,
             seq: { ticket: 4029, asset: 109, user: 5 },
             tickets: [
                 { id: 'TK-4029', subject: 'Falha na conexão da VPN após atualização do macOS', description: 'Desde a atualização do macOS, o cliente de VPN conecta e cai depois de cerca de 30 segundos. Já tentei reinstalar o cliente.', requester: 'Sarah Connor', email: 'sarah@company.com', category: 'Network', priority: 'High', status: 'In Progress', assigneeId: 2, assetId: 'AST-101', createdAt: ago(2), resolvedAt: null,
@@ -559,8 +670,10 @@
                 { id: 'AST-109', name: 'Adobe CC Enterprise (50 licenças)', type: 'Software License', serial: 'LIC-ADB-2026', status: 'In Use', assignedUser: 'Departamento de Design' }
             ],
             users: [
-                { id: 1, name: 'Admin User', email: 'admin@deskpulse.internal', role: 'Admin', status: 'Active', twoFactor: true },
-                { id: 2, name: 'Alex Mercer', email: 'alex.tech@deskpulse.internal', role: 'Technician', status: 'Active', twoFactor: true },
+                // Passwords are hashed on first load by migrateCredentials(); 2FA starts off because it
+                // needs a secret enrolled on a real authenticator app.
+                { id: 1, name: 'Admin User', email: 'admin@deskpulse.internal', role: 'Admin', status: 'Active', twoFactor: false },
+                { id: 2, name: 'Alex Mercer', email: 'alex.tech@deskpulse.internal', role: 'Technician', status: 'Active', twoFactor: false },
                 { id: 3, name: 'Sarah Connor', email: 'sarah@company.com', role: 'User', status: 'Active', twoFactor: false },
                 { id: 4, name: 'Michael Scott', email: 'michael@company.com', role: 'User', status: 'Active', twoFactor: false },
                 { id: 5, name: 'Pam Beesly', email: 'pam@company.com', role: 'User', status: 'Active', twoFactor: false }
@@ -569,20 +682,33 @@
     }
 
     function isValidData(d) {
-        return !!d && d.v === 3 && d.seq && Array.isArray(d.tickets) && Array.isArray(d.assets) && Array.isArray(d.users)
+        return !!d && (d.v === 3 || d.v === DATA_VERSION) && d.seq && Array.isArray(d.tickets) && Array.isArray(d.assets) && Array.isArray(d.users)
             && d.tickets.every((t) => t && typeof t.id === 'string' && typeof t.email === 'string' && Array.isArray(t.timeline))
             && d.assets.every((a) => a && typeof a.id === 'string')
             && d.users.every((u) => u && typeof u.name === 'string' && typeof u.email === 'string');
     }
     function applyData(d) { state.tickets = d.tickets; state.assets = d.assets; state.users = d.users; state.seq = d.seq; }
-    function loadData() {
+    async function loadData() {
         const saved = store.read(local, DATA_KEY);
         const ok = isValidData(saved);
         applyData(ok ? saved : seedData());
-        if (!ok) saveData();
+        const migrated = await migrateCredentials();
+        if (!ok || migrated || saved.v !== DATA_VERSION) saveData();
     }
     function saveData() {
-        store.write(local, DATA_KEY, { v: 3, seq: state.seq, tickets: state.tickets, assets: state.assets, users: state.users });
+        store.write(local, DATA_KEY, { v: DATA_VERSION, seq: state.seq, tickets: state.tickets, assets: state.assets, users: state.users });
+    }
+    // v3 data had no passwords (any password was accepted) and a 2FA flag with no secret behind it.
+    // Accounts without a password get the demo password; a 2FA flag without a secret is switched off,
+    // otherwise those users could never pass the code check.
+    async function migrateCredentials() {
+        if (!hasCrypto) return false;
+        let changed = false;
+        for (const u of state.users) {
+            if (!u.password) { u.password = await hashPassword(DEMO_PASSWORD); changed = true; }
+            if (u.twoFactor && !u.totpSecret) { u.twoFactor = false; changed = true; }
+        }
+        return changed;
     }
 
     // Sequential, collision-free IDs (the original used Math.random(), which could duplicate IDs).
@@ -1264,6 +1390,65 @@
     }
 
     // --- Settings & 2FA ---
+    // Three states: on (code required to turn off), enrolling (QR + confirm code), off (start button).
+    function twoFactorPanel(u) {
+        const box = 'p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700';
+        if (u.twoFactor) {
+            return h`
+            <div class="${box} space-y-3">
+                <div class="flex items-center gap-2 font-semibold text-sm text-emerald-700 dark:text-emerald-400">
+                    <i class="fa-solid fa-shield-halved" aria-hidden="true"></i> 2FA ativado: o login pede o código do seu aplicativo autenticador.
+                </div>
+                <form data-form="totp-disable" class="flex flex-col sm:flex-row gap-2 sm:items-end">
+                    <div class="flex-1">
+                        <label for="totp-off-code" class="field-label">Para desativar, informe um código atual</label>
+                        <input type="text" id="totp-off-code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" class="field font-mono tracking-[0.3em]">
+                    </div>
+                    <button type="submit" class="btn btn-ghost-danger">Desativar 2FA</button>
+                </form>
+            </div>`;
+        }
+        const setup = state.ui.totpSetup && state.ui.totpSetup.userId === u.id ? state.ui.totpSetup : null;
+        if (setup) {
+            const uri = otpauthUri(setup.secret, u.email);
+            const qr = qrDataUrl(uri);
+            return h`
+            <div class="${box} space-y-4">
+                <ol class="text-sm space-y-1 list-decimal pl-5">
+                    <li>Abra o Google Authenticator, Microsoft Authenticator ou Authy.</li>
+                    <li>Escaneie o QR code ou digite a chave manualmente.</li>
+                    <li>Informe o código de 6 dígitos que o aplicativo mostrar.</li>
+                </ol>
+                <div class="flex flex-col sm:flex-row items-center gap-4">
+                    ${qr ? h`<img src="${qr}" alt="QR code para configurar o 2FA no aplicativo autenticador" width="180" height="180" class="w-44 h-44 rounded-lg bg-white p-1 border border-slate-200 [image-rendering:pixelated]">`
+                         : h`<div class="w-44 h-44 shrink-0 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 flex items-center justify-center text-xs muted text-center p-3">QR code indisponível (biblioteca não carregou). Use a chave ao lado.</div>`}
+                    <div class="flex-1 min-w-0 space-y-2 text-xs">
+                        <div class="muted">Chave para digitar manualmente:</div>
+                        <code class="block font-mono font-bold text-sm text-brand-700 dark:text-brand-300 break-all">${groupSecret(setup.secret)}</code>
+                        <button type="button" data-action="copy-totp-secret" class="btn btn-secondary btn-sm"><i class="fa-solid fa-copy" aria-hidden="true"></i> Copiar chave</button>
+                        <div class="muted">Tipo: baseada em tempo (TOTP) · 6 dígitos · 30 segundos</div>
+                    </div>
+                </div>
+                <form data-form="totp-enable" class="flex flex-col sm:flex-row gap-2 sm:items-end">
+                    <div class="flex-1">
+                        <label for="totp-code" class="field-label">Código do aplicativo</label>
+                        <input type="text" id="totp-code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" class="field font-mono tracking-[0.3em]">
+                    </div>
+                    <button type="button" data-action="cancel-2fa" class="btn btn-secondary">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Confirmar e ativar</button>
+                </form>
+            </div>`;
+        }
+        return h`
+        <div class="${box} flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+                <div class="font-semibold text-sm">Aplicativo autenticador (TOTP)</div>
+                <div class="text-xs muted mt-0.5">Depois de ativado, o login pede a senha e um código de 6 dígitos que muda a cada 30 segundos.</div>
+            </div>
+            <button type="button" data-action="start-2fa" class="btn btn-primary shrink-0"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i> Configurar 2FA</button>
+        </div>`;
+    }
+
     function viewSettings() {
         const u = currentUser();
         return h`
@@ -1286,27 +1471,30 @@
                     <div class="flex justify-end"><button type="submit" class="btn btn-primary">Salvar alterações</button></div>
                 </form>
 
+                <form data-form="password" class="space-y-4" autocomplete="on">
+                    <h2 class="font-bold text-lg border-b border-slate-100 dark:border-slate-700 pb-3">Alterar senha</h2>
+                    <input type="text" value="${u.email}" autocomplete="username" class="hidden" tabindex="-1" aria-hidden="true" readonly>
+                    <div>
+                        <label for="pw-current" class="field-label">Senha atual</label>
+                        <input type="password" id="pw-current" required maxlength="128" autocomplete="current-password" class="field">
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div>
+                            <label for="pw-new" class="field-label">Nova senha</label>
+                            <input type="password" id="pw-new" required minlength="8" maxlength="128" autocomplete="new-password" class="field">
+                        </div>
+                        <div>
+                            <label for="pw-confirm" class="field-label">Confirmar nova senha</label>
+                            <input type="password" id="pw-confirm" required minlength="8" maxlength="128" autocomplete="new-password" class="field">
+                        </div>
+                    </div>
+                    <p class="text-xs muted">Mínimo de 8 caracteres. Maiúsculas e minúsculas fazem diferença.</p>
+                    <div class="flex justify-end"><button type="submit" class="btn btn-primary">Alterar senha</button></div>
+                </form>
+
                 <section class="space-y-4" aria-labelledby="twofa-title">
                     <h2 id="twofa-title" class="font-bold text-lg border-b border-slate-100 dark:border-slate-700 pb-3">Autenticação em dois fatores (2FA)</h2>
-                    <div class="flex items-center justify-between gap-4 p-4 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700">
-                        <div>
-                            <div class="font-semibold text-sm">Aplicativo autenticador (TOTP)</div>
-                            <div class="text-xs muted mt-0.5">Proteja sua conta com o Google Authenticator ou o Authy.</div>
-                        </div>
-                        <label class="relative inline-flex items-center cursor-pointer shrink-0">
-                            <input type="checkbox" role="switch" id="twofa-toggle" data-change="toggle-2fa" ${u.twoFactor ? 'checked' : ''} class="sr-only peer" aria-label="Ativar autenticação em dois fatores">
-                            <span class="w-11 h-6 bg-slate-400 dark:bg-slate-600 rounded-full peer-checked:bg-brand-600 peer-focus-visible:ring-2 peer-focus-visible:ring-brand-500 peer-focus-visible:ring-offset-2 dark:peer-focus-visible:ring-offset-slate-800 after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:after:translate-x-full"></span>
-                        </label>
-                    </div>
-                    ${u.twoFactor ? h`
-                    <div class="p-4 rounded-xl border border-dashed border-slate-300 dark:border-slate-600 flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-                        <div class="w-20 h-20 shrink-0 bg-slate-200 dark:bg-slate-700 rounded-lg flex items-center justify-center text-xs font-mono font-bold text-slate-600 dark:text-slate-300">QR CODE</div>
-                        <div class="flex-1 text-xs muted">
-                            Escaneie o QR code com seu aplicativo autenticador ou digite manualmente este segredo de exemplo:
-                            <span class="font-mono font-bold text-brand-700 dark:text-brand-300">JBSWY3DPEHPK3PXP</span>.
-                            <span class="block mt-1">Apenas demonstração: nenhum segredo real é gerado e o login não pede código.</span>
-                        </div>
-                    </div>` : ''}
+                    ${twoFactorPanel(u)}
                 </section>
             </div>
 
@@ -1398,28 +1586,107 @@
     const fillSelect = (sel, pairs) => { $(sel).innerHTML = String(h`${pairs.map(([v, l]) => h`<option value="${v}">${l}</option>`)}`); };
 
     // --- Auth ---
+    // Failed attempts per e-mail, kept in memory (a page reload resets them; a real server keeps them).
+    const loginFailures = new Map();
+    let pending2fa = null; // { userId, remember } between the password step and the code step
+    let loginBusy = false;
+
+    function loginError(msg) {
+        const err = $('#login-error');
+        err.textContent = msg || '';
+        err.classList.toggle('hidden', !msg);
+    }
+    function showLoginStep(step) {
+        $('#login-step1').classList.toggle('hidden', step !== 1);
+        $('#login-step2').classList.toggle('hidden', step !== 2);
+        const focus = step === 1 ? $('#login-password') : $('#login-code');
+        requestAnimationFrame(() => focus && focus.focus());
+    }
+    function lockRemaining(key) {
+        const f = loginFailures.get(key);
+        return f && f.until > Date.now() ? Math.ceil((f.until - Date.now()) / 1000) : 0;
+    }
+    function registerFailure(key) {
+        const f = loginFailures.get(key) || { count: 0, until: 0 };
+        f.count += 1;
+        if (f.count >= LOGIN_MAX_FAILURES) { f.until = Date.now() + LOGIN_LOCK_MS; f.count = 0; }
+        loginFailures.set(key, f);
+    }
     function openLogin() {
-        $('#login-error').classList.add('hidden');
+        pending2fa = null;
+        loginError('');
+        $('#login-password').value = '';
+        $('#login-code').value = '';
+        showLoginStep(1);
         openModal('login-modal');
     }
-    function handleLogin() {
-        const email = $('#login-email').value.trim();
-        const password = $('#login-password').value;
-        const remember = $('#login-remember').checked;
-        const err = $('#login-error');
-        const fail = (msg) => { err.textContent = msg; err.classList.remove('hidden'); };
-
-        const user = state.users.find((u) => sameEmail(u.email, email));
-        if (!user || !password) return fail('E-mail ou senha inválidos.');
-        if (user.status !== 'Active') return fail('Esta conta foi desativada. Fale com um administrador.');
-
+    function completeLogin(user, remember) {
+        pending2fa = null;
         // The role always comes from the stored account. (The original overwrote the stored role with
         // the demo preset, which permanently escalated or demoted real users.)
         state.currentUserId = user.id;
         persistSession(remember);
+        $('#login-password').value = '';
+        $('#login-code').value = '';
         closeModal('login-modal');
         showToast('Bem-vindo(a) de volta, ' + user.name + ' (' + lbl('role', user.role) + ')!', 'success');
         navigate('overview');
+    }
+    async function handleLogin() {
+        if (loginBusy) return;
+        if (!hasCrypto) return loginError('Este navegador bloqueou a criptografia (WebCrypto). Abra a página por https://, localhost ou como arquivo local.');
+        const email = $('#login-email').value.trim();
+        const password = $('#login-password').value; // exactly as typed: case sensitive, not trimmed
+        const remember = $('#login-remember').checked;
+        const key = email.toLowerCase();
+        const wait = lockRemaining(key);
+        if (wait) return loginError('Muitas tentativas. Aguarde ' + wait + ' s e tente de novo.');
+
+        loginBusy = true;
+        $('#login-submit').disabled = true;
+        try {
+            const user = state.users.find((u) => sameEmail(u.email, email));
+            // Hash even when the e-mail doesn't exist, so the response time doesn't reveal which accounts exist.
+            const ok = user ? await verifyPassword(password, user.password) : (await hashPassword(password), false);
+            if (!ok) { registerFailure(key); return loginError('E-mail ou senha inválidos.'); }
+            if (user.status !== 'Active') return loginError('Esta conta foi desativada. Fale com um administrador.');
+            loginFailures.delete(key);
+
+            if (user.twoFactor && user.totpSecret) {
+                pending2fa = { userId: user.id, remember };
+                loginError('');
+                showLoginStep(2);
+                return;
+            }
+            completeLogin(user, remember);
+        } finally {
+            loginBusy = false;
+            $('#login-submit').disabled = false;
+        }
+    }
+    async function handleLogin2fa() {
+        if (loginBusy || !pending2fa) return;
+        const user = state.users.find((u) => u.id === pending2fa.userId && u.status === 'Active');
+        if (!user) { openLogin(); return; }
+        const key = 'totp:' + user.id;
+        const wait = lockRemaining(key);
+        if (wait) return loginError('Muitas tentativas. Aguarde ' + wait + ' s e tente de novo.');
+
+        loginBusy = true;
+        try {
+            const step = await verifyTotp(user.totpSecret, $('#login-code').value, user.totpLastStep);
+            if (step === null) {
+                registerFailure(key);
+                $('#login-code').value = '';
+                return loginError('Código inválido ou já utilizado. Aguarde o próximo código do aplicativo.');
+            }
+            loginFailures.delete(key);
+            user.totpLastStep = step; // the same code can't be used twice
+            saveData();
+            completeLogin(user, pending2fa.remember);
+        } finally {
+            loginBusy = false;
+        }
     }
     function logout() {
         endSession();
@@ -1620,10 +1887,14 @@
         }
         $('#usr-role').disabled = $('#usr-status').disabled = isSelf;
         $('#usr-self-note').classList.toggle('hidden', !isSelf);
+        // New accounts need a password; on edit, a blank field keeps the current one.
+        $('#usr-password').required = !u;
+        $('#usr-password-hint').textContent = u ? 'Deixe em branco para manter a senha atual. Mínimo de 8 caracteres.' : 'Mínimo de 8 caracteres. Repasse-a ao usuário por um canal seguro.';
+        $('#usr-2fa-reset-wrap').classList.toggle('hidden', !(u && u.twoFactor && !isSelf));
         openModal('user-modal');
     }
-    function handleSaveUser() {
-        if (!can('manageUsers')) return;
+    async function handleSaveUser() {
+        if (!can('manageUsers') || !hasCrypto) return;
         const id = $('#usr-id').value ? Number($('#usr-id').value) : null;
         const existing = id ? state.users.find((u) => u.id === id) : null;
         const isSelf = !!existing && existing.id === state.currentUserId;
@@ -1634,16 +1905,21 @@
         if (!name || !email) { showToast('Nome e e-mail são obrigatórios.', 'error'); return; }
         if (!ROLES.some(([v]) => v === role) || !USER_STATUSES.some(([v]) => v === status)) return;
         if (state.users.some((u) => u.id !== id && sameEmail(u.email, email))) { showToast('Já existe um usuário com esse e-mail.', 'error'); return; }
+        const newPassword = $('#usr-password').value;
+        if ((!existing || newPassword) && newPassword.length < 8) { showToast('A senha precisa ter pelo menos 8 caracteres.', 'error'); return; }
+        const password = newPassword ? await hashPassword(newPassword) : null;
         if (existing && existing.role === 'Admin' && existing.status === 'Active' && (role !== 'Admin' || status !== 'Active') && activeAdmins().length <= 1) {
             showToast('É necessário manter pelo menos um administrador ativo.', 'error'); return;
         }
         if (existing) {
             if (!sameEmail(existing.email, email)) state.tickets.forEach((t) => { if (sameEmail(t.email, existing.email)) t.email = email; }); // keep "my tickets" attached
             Object.assign(existing, { name, email, role, status });
+            if (password) existing.password = password;
+            if (!isSelf && $('#usr-2fa-reset').checked) Object.assign(existing, { twoFactor: false, totpSecret: null, totpLastStep: null });
             showToast('Usuário ' + name + ' atualizado.', 'success');
         } else {
             const newId = nextNumber('user', (n) => state.users.some((u) => u.id === n));
-            state.users.push({ id: newId, name, email, role, status, twoFactor: false });
+            state.users.push({ id: newId, name, email, role, status, password, twoFactor: false, totpSecret: null, totpLastStep: null });
             showToast('Usuário ' + name + ' criado.', 'success');
         }
         saveData(); closeModal('user-modal'); refresh();
@@ -1680,12 +1956,51 @@
         saveData(); refresh();
         showToast('Perfil salvo.', 'success');
     }
-    function toggle2FA(on) {
+    async function handleChangePassword() {
         const u = currentUser();
-        if (!u) return;
-        u.twoFactor = !!on;
+        if (!u || !hasCrypto) return;
+        const current = $('#pw-current').value, next = $('#pw-new').value, confirm = $('#pw-confirm').value;
+        if (!(await verifyPassword(current, u.password))) { showToast('A senha atual está incorreta.', 'error'); return; }
+        if (next.length < 8) { showToast('A nova senha precisa ter pelo menos 8 caracteres.', 'error'); return; }
+        if (next !== confirm) { showToast('A confirmação não confere com a nova senha.', 'error'); return; }
+        if (next === current) { showToast('A nova senha deve ser diferente da atual.', 'error'); return; }
+        u.password = await hashPassword(next);
+        saveData();
+        ['#pw-current', '#pw-new', '#pw-confirm'].forEach((sel) => { $(sel).value = ''; });
+        showToast('Senha alterada.', 'success');
+    }
+    function startTwoFactor() {
+        const u = currentUser();
+        if (!u || !hasCrypto) { showToast('Este navegador não oferece a criptografia necessária para o 2FA.', 'error'); return; }
+        state.ui.totpSetup = { userId: u.id, secret: newTotpSecret() };
+        renderView();
+        requestAnimationFrame(() => { const el = $('#totp-code'); if (el) el.focus(); });
+    }
+    function cancelTwoFactor() { state.ui.totpSetup = null; renderView(); }
+    async function enableTwoFactor() {
+        const u = currentUser();
+        const setup = state.ui.totpSetup;
+        if (!u || !setup || setup.userId !== u.id) return;
+        const step = await verifyTotp(setup.secret, $('#totp-code').value, null);
+        if (step === null) {
+            showToast('Código incorreto. Confira se o relógio do celular está certo e tente o próximo código.', 'error');
+            $('#totp-code').value = ''; $('#totp-code').focus();
+            return;
+        }
+        // Only now does the secret become active: a typo while scanning can't lock the user out.
+        Object.assign(u, { twoFactor: true, totpSecret: setup.secret, totpLastStep: step });
+        state.ui.totpSetup = null;
         saveData(); renderView();
-        showToast('Autenticação em dois fatores ' + (on ? 'ativada' : 'desativada') + '.', 'success');
+        showToast('2FA ativado. O próximo login vai pedir o código do aplicativo.', 'success');
+    }
+    async function disableTwoFactor() {
+        const u = currentUser();
+        if (!u || !u.twoFactor) return;
+        const step = await verifyTotp(u.totpSecret, $('#totp-off-code').value, u.totpLastStep);
+        if (step === null) { showToast('Código inválido ou já utilizado.', 'error'); $('#totp-off-code').value = ''; return; }
+        Object.assign(u, { twoFactor: false, totpSecret: null, totpLastStep: null });
+        saveData(); renderView();
+        showToast('2FA desativado.', 'info');
     }
     async function resetDemo() {
         if (!can('manageUsers')) return;
@@ -1696,6 +2011,7 @@
         });
         if (!ok) return;
         applyData(seedData());
+        await migrateCredentials();
         saveData();
         state.ui = freshUi();
         handleRoute(); // re-validates the session against the fresh data and re-renders
@@ -1734,10 +2050,19 @@
         'open-user': (el) => openUserModal(el.dataset.id),
         'delete-user': (el) => deleteUser(el.dataset.id),
         'reset-demo': () => resetDemo(),
+        'login-back': () => { pending2fa = null; loginError(''); $('#login-code').value = ''; showLoginStep(1); },
+        'start-2fa': () => startTwoFactor(),
+        'cancel-2fa': () => cancelTwoFactor(),
+        'copy-totp-secret': async () => {
+            const setup = state.ui.totpSetup;
+            const ok = setup && await copyText(setup.secret);
+            showToast(ok ? 'Chave copiada.' : 'Não foi possível copiar. Selecione e copie manualmente.', ok ? 'success' : 'error');
+        },
         'confirm-yes': () => { const r = confirmResolver; confirmResolver = null; closeModal('confirm-modal'); if (r) r(true); }
     };
     const forms = {
-        'login': handleLogin, 'forgot': handlePasswordReset, 'new-ticket': handleCreateTicket, 'track': handleTrack,
+        'login': handleLogin, 'login-2fa': handleLogin2fa, 'forgot': handlePasswordReset,
+        'password': handleChangePassword, 'totp-enable': enableTwoFactor, 'totp-disable': disableTwoFactor, 'new-ticket': handleCreateTicket, 'track': handleTrack,
         'ticket-note': handleAddNote, 'asset': handleSaveAsset, 'user': handleSaveUser, 'profile': handleSaveProfile
     };
     const inputs = {
@@ -1751,21 +2076,25 @@
         'asset-type-filter': (el) => { state.ui.assetType = el.value; refreshAssetResults(); },
         'asset-status-filter': (el) => { state.ui.assetStatus = el.value; refreshAssetResults(); },
         'ticket-status': (el) => setTicketStatus(el.dataset.id, el.value),
-        'ticket-assignee': (el) => setTicketAssignee(el.dataset.id, el.value),
-        'toggle-2fa': (el) => toggle2FA(el.checked)
+        'ticket-assignee': (el) => setTicketAssignee(el.dataset.id, el.value)
     };
 
+    // Several handlers are async (hashing, TOTP): surface their failures instead of losing them.
+    const run = (fn, ...args) => Promise.resolve().then(() => fn(...args)).catch((err) => {
+        console.error(err);
+        showToast('Algo deu errado: ' + (err && err.message ? err.message : err), 'error');
+    });
     document.addEventListener('click', (e) => {
         const t = e.target;
         if (t.classList && t.classList.contains('modal-overlay')) { if (downOnOverlay) closeModal(t.id); return; }
         const el = t.closest && t.closest('[data-action]');
-        if (el && actions[el.dataset.action]) actions[el.dataset.action](el, e);
+        if (el && actions[el.dataset.action]) run(actions[el.dataset.action], el, e);
     });
     document.addEventListener('submit', (e) => {
         const f = e.target.closest && e.target.closest('[data-form]');
         if (!f || !forms[f.dataset.form]) return;
         e.preventDefault();
-        forms[f.dataset.form](f, e);
+        run(forms[f.dataset.form], f, e);
     });
     document.addEventListener('input', (e) => {
         const el = e.target.closest && e.target.closest('[data-input]');
@@ -1779,16 +2108,17 @@
     // Changes made in another tab: reload the data and re-render instead of overwriting it later.
     window.addEventListener('storage', (e) => {
         if (e.key !== DATA_KEY) return;
-        loadData();
-        handleRoute();
-        if (state.ui.openTicketId) renderTicketDetail();
+        loadData().then(() => {
+            handleRoute();
+            if (state.ui.openTicketId) renderTicketDetail();
+        });
     });
     window.addEventListener('hashchange', () => handleRoute());
 
     /* =====================================================================
        9. BOOT
        ===================================================================== */
-    function boot() {
+    async function boot() {
         fillSelect('#tf-category', CATEGORIES);
         fillSelect('#tf-priority', PRIORITY_OPTS);
 
@@ -1798,7 +2128,8 @@
         fillSelect('#usr-role', ROLES);
         fillSelect('#usr-status', USER_STATUSES);
         applyThemeUI();
-        loadData();
+        if (!hasCrypto) showToast('Este navegador bloqueou a criptografia (WebCrypto): o login não vai funcionar. Abra a página por https://, localhost ou como arquivo local.', 'error');
+        await loadData(); // the first run hashes the demo passwords, which takes a moment
         restoreSession();
         handleRoute(true);
     }
