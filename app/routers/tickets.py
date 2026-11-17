@@ -65,9 +65,11 @@ def ticket_filters(
         stmt = stmt.where(or_(T.status == CLOSED, T.due_at.is_(None), T.due_at >= utcnow()))
     if q and q.strip():
         term = q.strip()
-        like = f"%{term}%"
-        conds = [T.title.ilike(like), T.description.ilike(like),
-                 T.requester_name.ilike(like), T.requester_email.ilike(like)]
+        # Escape LIKE wildcards so a search for "100%" or "a_b" matches those characters literally.
+        escaped = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        like = f"%{escaped}%"
+        conds = [c.ilike(like, escape="\\")
+                 for c in (T.title, T.description, T.requester_name, T.requester_email)]
         if term.lstrip("#").isdigit():
             conds.append(T.id == int(term.lstrip("#")))
         stmt = stmt.where(or_(*conds))

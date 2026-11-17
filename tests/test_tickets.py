@@ -126,6 +126,7 @@ def test_list_filters_search_sort_and_pagination(admin, company, make_agent):
     assert set(ids(company_id=other["id"])) == {c["id"]}
     assert ids(q="ceo") == [c["id"]]                  # searches description
     assert ids(q=f"#{b['id']}") == [b["id"]]          # search by id
+    assert ids(q="%") == [] and ids(q="_") == []      # LIKE wildcards are literal
     assert ids(assignee="none", status="active") == [c["id"]]
     assert ids(assignee=str(agent["id"])) == [b["id"]]
     assert [t["id"] for t in admin.get("/api/tickets", params={"assignee": "me"},

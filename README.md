@@ -65,6 +65,8 @@ pytest
 
 A separate single-file front-end demo (IT help desk + asset inventory, in Brazilian Portuguese). It has **no server**: the sign-in is simulated in the browser and the data sits in `localStorage`, so it is for demos only. Never put real data in it or rely on its permissions as security. Open the file directly or run `python -m http.server 5180 --bind 127.0.0.1 --directory deskpulse`.
 
+**Future idea:** this Ticket System backend (real sign-in, database, server-side SLA) is what DeskPulse lacks to leave demo mode. If you want that, adapt this code as DeskPulse's backend.
+
 ## Layout
 
 ```
