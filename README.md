@@ -21,15 +21,19 @@ pytest
 ## Features
 
 - **Sign-in & roles**: first-run admin setup, bearer-token sessions (7 days), PBKDF2 password hashing.
-  - **Admins** manage users and can delete companies/tickets.
-  - **Agents** work tickets.
+  - **Admins** manage users and can delete companies, tickets and assets.
+  - **Technicians** work tickets, manage companies and the asset inventory.
+  - **End users** open tickets and follow their own. They never see other people's tickets, internal notes, the inventory, companies or stats. This is enforced by the API, not the screen.
   - Deactivating a user or resetting their password signs them out everywhere.
-- **Tickets**: status (open, in progress, waiting, closed), priority, company, assignee, requester name/email.
-- **Due dates**: set from priority (urgent 4h, high 24h, medium 72h, low 7d) and recalculated when priority changes. Overdue tickets are flagged and can be filtered.
-- **Comments**: public replies and agent-only **internal notes**.
-- **Activity history**: every change to status, priority, assignee, company and title records who changed it and when.
+  - Optional **two-factor sign-in** (TOTP: Google Authenticator, Authy...): `POST /api/auth/2fa/setup`, `/2fa/enable`, `/2fa/disable`. With it on, `/login` answers 401 with `X-2FA-Required: true` until the request carries `otp`.
+- **Tickets**: shown as `TK-<id>`. Fields: status (open, in progress, waiting, resolved, closed), category (hardware, software, network, access & security, other), priority, company, requester, assignee and an optional asset.
+  - Whoever opens a ticket does **not** choose its priority. Technicians set it when they triage, so a new ticket has no priority and no due date yet (the dashboard counts these as "Not triaged"). End users send only title, description, category and asset; the company and requester come from their account (`company_id` on the user).
+- **Assets (inventory)**: `AST-<id>` with type, serial (unique), status (in use, stock, maintenance, retired), assigned user and location. End users can link a ticket only to equipment assigned to them (`GET /api/assets/mine`).
+- **Due dates**: set from priority (critical 4h, high 24h, medium 72h, low 7d) once a technician sets it, and recalculated when it changes. Overdue tickets are flagged and can be filtered. Resolved and closed tickets are never overdue.
+- **Comments**: public replies and technician-only **internal notes**.
+- **Activity history**: every change to status, priority, category, assignee, requester, company, asset and title records who changed it and when.
 - **List view**:
-  - search (title, description, requester, `#id`) and filters (status, priority, company, assignee, overdue)
+  - search (title, description, requester, `TK-id`) and filters (status, priority or `none`, category, company, asset, assignee, overdue)
   - sortable columns and pagination
   - bulk updates
   - **CSV export** (protected against formulas running in Excel)
@@ -46,7 +50,7 @@ pytest
 | `DATABASE_URL` | `sqlite:///./tickets.db` | Any SQLAlchemy URL (e.g. PostgreSQL) |
 | `TOKEN_TTL_HOURS` | `168` | How long a sign-in lasts |
 | `PASSWORD_HASH_ITERATIONS` | `600000` | PBKDF2 work factor |
-| `SLA_URGENT_HOURS` / `SLA_HIGH_HOURS` / `SLA_MEDIUM_HOURS` / `SLA_LOW_HOURS` | `4` / `24` / `72` / `168` | Due-date targets |
+| `SLA_CRITICAL_HOURS` / `SLA_HIGH_HOURS` / `SLA_MEDIUM_HOURS` / `SLA_LOW_HOURS` | `4` / `24` / `72` / `168` | Due-date targets |
 | `SETUP_TOKEN` | *(empty)* | If set, creating the first admin needs this code. **Set it on any server others can reach.** |
 | `LOGIN_MAX_FAILURES` / `LOGIN_WINDOW_SECONDS` | `5` / `900` | Failed sign-ins allowed per account (and 4× that per IP) before a 15-minute lockout |
 | `ENABLE_DOCS` | `1` | Set to `0` to hide `/docs`, `/redoc` and `/openapi.json` on a public server |
@@ -61,11 +65,19 @@ pytest
 - Keep dependencies current: `pip install pip-audit && pip-audit -r requirements.txt`.
 - `tickets.db` holds real data. It is git-ignored, so keep it out of commits and back it up separately.
 
-## DeskPulse prototype (`deskpulse/`)
+## DeskPulse (`deskpulse/`)
 
-A separate single-file front-end demo (IT help desk + asset inventory, in Brazilian Portuguese). It has **no server**: the sign-in is simulated in the browser and the data sits in `localStorage`, so it is for demos only. Never put real data in it or rely on its permissions as security. Open the file directly or run `python -m http.server 5180 --bind 127.0.0.1 --directory deskpulse`.
+The web front-end (IT help desk + asset inventory, in Brazilian Portuguese). It is served by this same server, so there is nothing else to run:
 
-**Future idea:** this Ticket System backend (real sign-in, database, server-side SLA) is what DeskPulse lacks to leave demo mode. If you want that, adapt this code as DeskPulse's backend.
+```bash
+uvicorn app.main:app --reload       # then open http://127.0.0.1:8000
+```
+
+- `/` is DeskPulse. The first visit asks you to create the administrator; after that everyone signs in with the account an administrator created for them.
+- `/console` is the original administrator console (tickets, companies, users), kept alongside it. `/docs` is the API reference.
+- DeskPulse talks to the API (`/api/...`) with a bearer token. Roles, ticket visibility, SLA and 2FA are all decided by the server; the screens only reflect them.
+- The scripts live in `deskpulse/` (`app.js`, `theme.js`, `tailwind-config.js`) because the page's security policy forbids inline scripts. Tailwind and the icons still come from their CDNs.
+- Not built yet: sign-in-free ticket tracking, e-mail (password recovery, notifications) and attachments. Until e-mail exists, an administrator sets a new password for someone who forgot theirs.
 
 ## Layout
 
@@ -74,16 +86,24 @@ app/
   main.py        app setup, security headers, static files
   config.py      settings
   database.py    engine, session, UTC datetime type
-  models.py      User, AuthToken, Company, Ticket, Comment, TicketEvent
+  models.py      User, AuthToken, Company, Asset, Ticket, Comment, TicketEvent
   schemas.py     request/response models
-  security.py    password hashing, tokens, auth dependencies
-  services.py    ticket rules (due dates, closing, audit trail)
-  routers/       auth, users, companies, tickets, stats
-  static/        index.html, style.css, app.js
+  security.py    password hashing, tokens, auth dependencies (CurrentUser, StaffUser, AdminUser)
+  totp.py        two-factor codes (RFC 6238)
+  services.py    ticket rules (who may set what, due dates, resolving, audit trail)
+  routers/       auth (incl. 2FA), users, companies, assets, tickets, stats
+  static/        the admin console (index.html, style.css, app.js)
+deskpulse/       the DeskPulse front-end (index.html, app.js, theme.js, tailwind-config.js)
+alembic/         database migrations
 tests/           pytest suite
 ```
 
 ## Notes
 
-- The schema changed from v1, so delete an old `tickets.db` before the first run. Tables are created at startup with `create_all`. Before running this in production, add **Alembic** migrations so future schema changes don't need a fresh database.
+- **Database migrations (Alembic).** The app runs `alembic upgrade head` at startup (set `AUTO_MIGRATE=0` to run it yourself as a deploy step). After changing `app/models.py`:
+  1. `alembic revision --autogenerate -m "what changed"`
+  2. Read the new file in `alembic/versions/`. Autogenerate can miss renames, and a new NOT NULL column on a table with rows needs a default.
+  3. `alembic upgrade head`. The test suite fails if a model changed without a migration.
+
+  Other commands: `alembic current`, `alembic history`, `alembic downgrade -1`. A database created before Alembic (by `create_all`) has no `alembic_version` table: back it up and delete it, or run `alembic stamp 0001` only if its schema is exactly the one in `0001_initial_schema.py`.
 - Sessions are stored in `localStorage` and the API uses `Authorization: Bearer`. Serve it over **HTTPS** anywhere other than your own machine (HSTS is sent automatically on HTTPS requests).

@@ -8,8 +8,10 @@ const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
 const TABS = ['dashboard', 'tickets', 'companies', 'users'];
-const STATUS = { open: 'Open', in_progress: 'In progress', waiting: 'Waiting', closed: 'Closed' };
-const PRIORITY = { urgent: 'Urgent', high: 'High', medium: 'Medium', low: 'Low' };
+const STATUS = { open: 'Open', in_progress: 'In progress', waiting: 'Waiting', resolved: 'Resolved', closed: 'Closed' };
+const DONE = ['resolved', 'closed'];
+const PRIORITY = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' };
+const CATEGORY = { hardware: 'Hardware', software: 'Software', network: 'Network', access_security: 'Access & security', other: 'Other' };
 
 const state = {
     me: null,
@@ -35,6 +37,8 @@ let token = tokenStore.get();
 
 const isAdmin = () => state.me?.role === 'admin';
 const activeUsers = () => state.users.filter(u => u.is_active);
+const activeStaff = () => activeUsers().filter(u => u.role !== 'user');  // can be assigned tickets
+const isStaff = (u) => u?.role === 'admin' || u?.role === 'technician';
 
 // ======================================================================
 //  API
@@ -117,7 +121,9 @@ const options = (entries, selected) => entries
     .join('');
 
 const statusBadge = (s) => `<span class="badge badge-${s}">${STATUS[s] || s}</span>`;
-const priorityBadge = (p) => `<span class="badge badge-${p}">${PRIORITY[p] || p}</span>`;
+const priorityBadge = (p) => (p
+    ? `<span class="badge badge-${p}">${PRIORITY[p] || p}</span>`
+    : '<span class="badge badge-none" title="Waiting for a technician to set it">Not set</span>');
 const emptyRow = (cols, text) => `<tr><td colspan="${cols}" class="empty">${text}</td></tr>`;
 
 function debounce(fn, ms) {
@@ -179,6 +185,11 @@ function signedOut() {
 }
 
 async function enterApp() {
+    if (!isStaff(state.me)) {  // end users open and follow tickets in the DeskPulse portal, not here
+        await logout();
+        toast('This console is for technicians and administrators.', 'error');
+        return;
+    }
     $('#auth-view').hidden = true;
     $('#app-view').hidden = false;
     $('#me-name').textContent = state.me.name;
@@ -192,17 +203,31 @@ async function enterApp() {
 
 onSubmit($('#auth-form'), async () => {
     const body = { email: $('#auth-email').value.trim(), password: $('#auth-password').value };
+    const otp = $('#auth-otp').value.trim();
+    if (authMode === 'login' && otp) body.otp = otp;
     const options = { method: 'POST', body };
     if (authMode === 'setup') {
         body.name = $('#auth-name').value.trim();
         const code = $('#auth-setup-code').value;
         if (code) options.headers = { 'X-Setup-Token': code };
     }
-    const res = await api(authMode === 'setup' ? '/auth/setup' : '/auth/login', options);
+    let res;
+    try {
+        res = await api(authMode === 'setup' ? '/auth/setup' : '/auth/login', options);
+    } catch (err) {
+        if (err.message === 'Two-factor code required') {  // password was right; ask for the code
+            $('#auth-otp-group').hidden = false;
+            $('#auth-otp').required = true;
+            $('#auth-otp').focus();
+        }
+        throw err;
+    }
     token = res.token;
     tokenStore.set(token);
     state.me = res.user;
     $('#auth-form').reset();
+    $('#auth-otp-group').hidden = true;
+    $('#auth-otp').required = false;
     await enterApp();
 });
 
@@ -255,7 +280,10 @@ const EVENT_TEXT = {
     created: () => 'created the ticket',
     comment: (e) => (e.new_value === 'internal' ? 'added an internal note' : 'replied'),
     status: (e) => `changed status <b>${esc(STATUS[e.old_value] || e.old_value)}</b> → <b>${esc(STATUS[e.new_value] || e.new_value)}</b>`,
-    priority: (e) => `changed priority <b>${esc(PRIORITY[e.old_value] || e.old_value)}</b> → <b>${esc(PRIORITY[e.new_value] || e.new_value)}</b>`,
+    priority: (e) => `set priority ${e.old_value ? `<b>${esc(PRIORITY[e.old_value] || e.old_value)}</b> →` : 'to'} <b>${esc(PRIORITY[e.new_value] || e.new_value)}</b>`,
+    category: (e) => `changed category <b>${esc(CATEGORY[e.old_value] || e.old_value)}</b> → <b>${esc(CATEGORY[e.new_value] || e.new_value)}</b>`,
+    requester: (e) => (e.new_value ? `set the requester to <b>${esc(e.new_value)}</b>` : `cleared the requester`),
+    asset: (e) => (e.new_value ? `linked asset <b>${esc(e.new_value)}</b>` : `unlinked asset <b>${esc(e.old_value)}</b>`),
     assignee: (e) => (e.new_value ? `assigned it to <b>${esc(e.new_value)}</b>` : `unassigned <b>${esc(e.old_value)}</b>`),
     company: (e) => `moved it to <b>${esc(e.new_value)}</b>`,
     title: (e) => `renamed it to <b>${esc(e.new_value)}</b>`,
@@ -273,6 +301,7 @@ async function loadDashboard() {
         set('#stat-overdue', s.overdue);
         set('#stat-unassigned', s.unassigned);
         set('#stat-mine', s.mine);
+        set('#stat-untriaged', s.unprioritized);
         set('#stat-avg', formatHours(s.avg_resolution_hours));
 
         const max = Math.max(1, ...Object.values(s.by_priority));
@@ -287,7 +316,7 @@ async function loadDashboard() {
             ? s.recent_activity.map(e => `
                 <li>
                     <b>${esc(e.actor_name || 'Someone')}</b> ${describeEvent(e)}
-                    on <a href="#tickets/${e.ticket_id}">#${e.ticket_id} ${esc(e.ticket_title)}</a>
+                    on <a href="#tickets/${e.ticket_id}">${esc(e.ticket_code)} ${esc(e.ticket_title)}</a>
                     <span class="muted small" title="${formatDate(e.created_at)}">· ${formatRelative(e.created_at)}</span>
                 </li>`).join('')
             : '<li class="muted">No activity yet.</li>';
@@ -324,7 +353,7 @@ async function loadUsers() {
 }
 
 function updateUserSelects() {
-    const people = activeUsers().map(u => [u.id, u.id === state.me.id ? `${u.name} (me)` : u.name]);
+    const people = activeStaff().map(u => [u.id, u.id === state.me.id ? `${u.name} (me)` : u.name]);
     const keep = (sel, html) => { const v = sel.value; sel.innerHTML = html; sel.value = v; if (sel.selectedIndex < 0) sel.selectedIndex = 0; };
     keep($('#filter-assignee'), options([['', 'Anyone'], ['me', 'Assigned to me'], ['none', 'Unassigned'], ...people]));
     keep($('#bulk-assignee'), options([['', 'Assignee…'], ['none', 'Unassign'], ...people]));
@@ -359,6 +388,7 @@ function openUserModal(id = null) {
         $('#user-role').value = u.role;
         $('#user-active').value = String(u.is_active);
     }
+    $('#user-company').innerHTML = options([['', 'No company'], ...state.companies.map(c => [c.id, c.name])], u?.company_id);
     openModal($('#user-modal'));
 }
 
@@ -368,6 +398,7 @@ onSubmit($('#user-form'), async () => {
         name: $('#user-name').value.trim(),
         email: $('#user-email').value.trim(),
         role: $('#user-role').value,
+        company_id: $('#user-company').value ? Number($('#user-company').value) : null,
     };
     const password = $('#user-password').value;
     if (password) body.password = password;
@@ -528,7 +559,7 @@ async function loadTickets() {
 }
 
 function dueCell(t) {
-    if (t.status === 'closed' || !t.due_at) return '<span class="muted">—</span>';
+    if (DONE.includes(t.status) || !t.due_at) return '<span class="muted">—</span>';
     const title = `Due ${formatDate(t.due_at)}`;
     return t.is_overdue
         ? `<span class="badge badge-overdue" title="${title}">Overdue · ${formatRelative(t.due_at)}</span>`
@@ -539,8 +570,8 @@ function renderTickets() {
     const tbody = $('#tickets-table tbody');
     tbody.innerHTML = state.tickets.length ? state.tickets.map(t => `
         <tr class="clickable${state.selected.has(t.id) ? ' selected' : ''}" data-open-ticket="${t.id}">
-            <td class="col-check"><input type="checkbox" data-select="${t.id}" aria-label="Select ticket ${t.id}"${state.selected.has(t.id) ? ' checked' : ''}></td>
-            <td class="muted">#${t.id}</td>
+            <td class="col-check"><input type="checkbox" data-select="${t.id}" aria-label="Select ticket ${esc(t.code)}"${state.selected.has(t.id) ? ' checked' : ''}></td>
+            <td class="muted">${esc(t.code)}</td>
             <td class="col-title">${esc(t.title)}</td>
             <td>${esc(t.company.name)}</td>
             <td>${t.assignee ? esc(t.assignee.name) : '<span class="muted">Unassigned</span>'}</td>
@@ -663,14 +694,14 @@ function timeline(t) {
 
 function renderDrawer() {
     const t = state.ticket;
-    const people = activeUsers().map(u => [u.id, u.name]);
+    const people = activeStaff().map(u => [u.id, u.name]);
     // Keep showing a deactivated assignee rather than silently blanking the field
     if (t.assignee && !people.some(([id]) => id === t.assignee.id)) people.push([t.assignee.id, `${t.assignee.name} (inactive)`]);
 
     $('#drawer-body').innerHTML = `
         <div class="drawer-head">
             <div>
-                <span class="muted">#${t.id} · ${esc(t.company.name)}</span>
+                <span class="muted">${esc(t.code)} · ${esc(t.company.name)}</span>
                 <h3>${esc(t.title)}</h3>
             </div>
             <button class="icon-btn" data-close-drawer aria-label="Close">✕</button>
@@ -678,18 +709,18 @@ function renderDrawer() {
 
         <div class="drawer-fields">
             <label>Status<select data-field="status">${options(Object.entries(STATUS), t.status)}</select></label>
-            <label>Priority<select data-field="priority">${options(Object.entries(PRIORITY), t.priority)}</select></label>
+            <label>Priority<select data-field="priority">${options([['', 'Not set'], ...Object.entries(PRIORITY)], t.priority)}</select></label>
+            <label>Category<select data-field="category">${options(Object.entries(CATEGORY), t.category)}</select></label>
             <label>Assignee<select data-field="assignee_id">${options([['', 'Unassigned'], ...people], t.assignee_id)}</select></label>
             <label>Company<select data-field="company_id">${options(state.companies.map(c => [c.id, c.name]), t.company_id)}</select></label>
         </div>
 
         <dl class="meta">
-            <dt>Due</dt><dd>${t.status === 'closed' ? '—' : `${dueCell(t)} <span class="muted small">(${formatDate(t.due_at)})</span>`}</dd>
-            <dt>Requester</dt><dd>${t.requester_name || t.requester_email
-                ? `${esc(t.requester_name || '')} ${t.requester_email ? `<a href="mailto:${esc(t.requester_email)}">${esc(t.requester_email)}</a>` : ''}`
-                : '<span class="muted">—</span>'}</dd>
+            <dt>Due</dt><dd>${DONE.includes(t.status) || !t.due_at ? '—' : `${dueCell(t)} <span class="muted small">(${formatDate(t.due_at)})</span>`}</dd>
+            <dt>Requester</dt><dd>${t.requester ? esc(t.requester.name) : '<span class="muted">—</span>'}</dd>
+            <dt>Asset</dt><dd>${t.asset ? `${esc(t.asset.code)} · ${esc(t.asset.name)}` : '<span class="muted">—</span>'}</dd>
             <dt>Created</dt><dd>${formatDate(t.created_at)}${t.created_by ? ` by ${esc(t.created_by.name)}` : ''}</dd>
-            ${t.closed_at ? `<dt>Closed</dt><dd>${formatDate(t.closed_at)}</dd>` : ''}
+            ${t.resolved_at ? `<dt>Resolved</dt><dd>${formatDate(t.resolved_at)}</dd>` : ''}
         </dl>
 
         <div class="drawer-actions">
@@ -706,7 +737,7 @@ function renderDrawer() {
         <form id="comment-form" class="comment-form">
             <textarea id="comment-body" rows="3" placeholder="Write a reply or an internal note…" required maxlength="20000"></textarea>
             <div class="comment-actions">
-                <label class="check"><input type="checkbox" id="comment-internal"> Internal note (agents only)</label>
+                <label class="check"><input type="checkbox" id="comment-internal"> Internal note (technicians only)</label>
                 <button type="submit" class="btn btn-primary btn-sm">Add comment</button>
             </div>
         </form>`;
@@ -717,6 +748,7 @@ async function updateTicketField(field, raw) {
     let value = raw;
     if (field === 'assignee_id') value = raw ? Number(raw) : null;
     if (field === 'company_id') value = Number(raw);
+    if (field === 'priority' && !raw) return renderDrawer();  // a priority can be changed but not cleared
     try {
         state.ticket = await api(`/tickets/${t.id}`, { method: 'PATCH', body: { [field]: value } });
         renderDrawer();
@@ -753,17 +785,17 @@ function openTicketModal(id = null) {
     if (!state.companies.length) return toast('Create a company first.', 'error');
     $('#ticket-form').reset();
     updateCompanySelects();
+    $('#ticket-requester').innerHTML = options([['', 'Nobody'], ...activeUsers().map(u => [u.id, `${u.name} (${u.email})`])]);
     const t = id && state.ticket?.id === id ? state.ticket : null;
     $('#ticket-id').value = t?.id ?? '';
-    $('#ticket-modal-title').textContent = t ? `Edit Ticket #${t.id}` : 'New Ticket';
+    $('#ticket-modal-title').textContent = t ? `Edit Ticket ${t.code}` : 'New Ticket';
     if (t) {
         $('#ticket-title').value = t.title;
         $('#ticket-description').value = t.description || '';
         $('#ticket-company').value = t.company_id;
-        $('#ticket-priority').value = t.priority;
+        $('#ticket-category').value = t.category;
+        $('#ticket-requester').value = t.requester_id ?? '';
         $('#ticket-assignee').value = t.assignee_id ?? '';
-        $('#ticket-requester-name').value = t.requester_name || '';
-        $('#ticket-requester-email').value = t.requester_email || '';
     } else {
         // Pre-fill the company when the list is filtered to one
         const filtered = $('#filter-company').value;
@@ -779,16 +811,15 @@ onSubmit($('#ticket-form'), async () => {
         title: $('#ticket-title').value.trim(),
         description: $('#ticket-description').value.trim() || null,
         company_id: Number($('#ticket-company').value),
-        priority: $('#ticket-priority').value,
+        category: $('#ticket-category').value,
         assignee_id: assignee ? Number(assignee) : null,
-        requester_name: $('#ticket-requester-name').value.trim() || null,
-        requester_email: $('#ticket-requester-email').value.trim() || null,
+        requester_id: $('#ticket-requester').value ? Number($('#ticket-requester').value) : null,
     };
     const saved = id
         ? await api(`/tickets/${id}`, { method: 'PATCH', body })
         : await api('/tickets', { method: 'POST', body });
     closeModal($('#ticket-modal'));
-    toast(id ? 'Ticket updated' : `Ticket #${saved.id} created`);
+    toast(id ? 'Ticket updated' : `Ticket ${saved.code} created`);
     if (state.tab === 'tickets') loadTickets();
     go(`tickets/${saved.id}`);
 });

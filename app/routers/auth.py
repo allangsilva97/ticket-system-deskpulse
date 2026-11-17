@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 from fastapi import APIRouter, Header, HTTPException, Request, Response
 from sqlalchemy import func, select
 
-from app import config, models, schemas
+from app import config, models, schemas, totp
 from app.database import DB
 from app.ratelimit import client_ip, login_limiter, login_rules
 from app.security import (
@@ -61,10 +61,27 @@ def login(payload: schemas.LoginIn, request: Request, db: DB):
     if user is None or not verify_password(payload.password, user.password_hash) or not user.is_active:
         login_limiter.fail(rules)
         raise HTTPException(401, "Invalid email or password")  # same message: don't reveal which part was wrong
+    if user.two_factor_enabled:
+        if payload.otp is None:  # password was right: ask for the second factor (not a failed attempt)
+            raise HTTPException(401, "Two-factor code required", headers={"X-2FA-Required": "true"})
+        if not _use_code(user, payload.otp):
+            login_limiter.fail(rules)
+            raise HTTPException(401, "Invalid two-factor code")
     login_limiter.clear(rules[0][0])
     token = issue_token(db, user)
     db.commit()
     return schemas.TokenOut(token=token, user=schemas.UserOut.model_validate(user))
+
+
+def _use_code(user: models.User, code: str) -> bool:
+    """Check a TOTP code and remember the step, so the same code can't be used twice."""
+    if not user.totp_secret:
+        return False
+    step = totp.match(user.totp_secret, code)
+    if step is None or (user.totp_last_counter is not None and step <= user.totp_last_counter):
+        return False
+    user.totp_last_counter = step
+    return True
 
 
 @router.post("/logout", status_code=204)
@@ -88,5 +105,58 @@ def update_me(payload: schemas.MeUpdate, user: CurrentUser, token: CurrentToken,
             raise HTTPException(400, "Current password is incorrect")
         user.password_hash = hash_password(payload.new_password)
         revoke_tokens(db, user.id, keep_id=token.id)  # sign out other devices
+    db.commit()
+    return user
+
+
+# ---------- Two-factor (TOTP) ----------
+
+def _2fa_rules(request: Request, user: models.User):
+    return [(f"2fa:{client_ip(request)}:{user.id}", config.LOGIN_MAX_FAILURES)]
+
+
+@router.post("/2fa/setup", response_model=schemas.TwoFactorSetupOut)
+def two_factor_setup(user: CurrentUser, db: DB):
+    """Start enrolling: returns the secret to scan. It only counts after /2fa/enable confirms a code."""
+    if user.two_factor_enabled:
+        raise HTTPException(409, "Two-factor is already on. Turn it off first to enrol a new device.")
+    user.totp_secret = totp.new_secret()
+    user.totp_last_counter = None
+    db.commit()
+    return schemas.TwoFactorSetupOut(
+        secret=user.totp_secret,
+        otpauth_uri=totp.otpauth_uri(user.totp_secret, user.email, config.TOTP_ISSUER),
+    )
+
+
+@router.post("/2fa/enable", response_model=schemas.UserOut)
+def two_factor_enable(payload: schemas.TwoFactorCode, request: Request, user: CurrentUser, db: DB):
+    if user.two_factor_enabled:
+        raise HTTPException(409, "Two-factor is already on")
+    if not user.totp_secret:
+        raise HTTPException(400, "Start with /2fa/setup")
+    rules = _2fa_rules(request, user)
+    login_limiter.check(rules)
+    if not _use_code(user, payload.code):
+        login_limiter.fail(rules)
+        raise HTTPException(400, "Invalid two-factor code")
+    user.two_factor_enabled = True
+    db.commit()
+    return user
+
+
+@router.post("/2fa/disable", response_model=schemas.UserOut)
+def two_factor_disable(payload: schemas.TwoFactorDisable, request: Request, user: CurrentUser, db: DB):
+    """Needs the password and a current code, so a stolen session alone can't switch it off."""
+    if not user.two_factor_enabled:
+        raise HTTPException(409, "Two-factor is not on")
+    rules = _2fa_rules(request, user)
+    login_limiter.check(rules)
+    if not verify_password(payload.password, user.password_hash) or not _use_code(user, payload.code):
+        login_limiter.fail(rules)
+        raise HTTPException(400, "Wrong password or code")
+    user.two_factor_enabled = False
+    user.totp_secret = None
+    user.totp_last_counter = None
     db.commit()
     return user

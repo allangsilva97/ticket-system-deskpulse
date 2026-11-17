@@ -5,18 +5,18 @@ from sqlalchemy import case, func, select
 
 from app import models, schemas
 from app.database import DB
-from app.security import AdminUser, get_current_user
+from app.security import AdminUser, require_staff
 from app.utils import commit_or_409, get_or_404
 
 router = APIRouter(
-    prefix="/api/companies", tags=["companies"], dependencies=[Depends(get_current_user)]
+    prefix="/api/companies", tags=["companies"], dependencies=[Depends(require_staff)]
 )
 
 NAME_TAKEN = "A company with this name already exists"
 
 T = models.Ticket
 _total = func.count(T.id)
-_open = func.coalesce(func.sum(case((T.status != models.TicketStatus.CLOSED, 1), else_=0)), 0)
+_open = func.coalesce(func.sum(case((T.status.not_in(models.DONE_STATUSES), 1), else_=0)), 0)
 
 
 def _with_counts():

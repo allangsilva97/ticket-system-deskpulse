@@ -3,7 +3,7 @@ from typing import Annotated, Dict, List, Optional
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field, StringConstraints, field_validator
 
-from app.models import TicketPriority, TicketStatus, UserRole
+from app.models import AssetStatus, AssetType, TicketCategory, TicketPriority, TicketStatus, UserRole
 
 # ---------- Reusable field types ----------
 Name = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=255)]
@@ -41,6 +41,8 @@ class UserOut(_Out):
     email: str
     role: UserRole
     is_active: bool
+    company_id: Optional[int] = None
+    two_factor_enabled: bool = False
     created_at: datetime
 
 
@@ -53,6 +55,21 @@ class SetupIn(_In):
 class LoginIn(_In):
     email: Email
     password: Annotated[str, StringConstraints(max_length=128)]
+    otp: Optional[Annotated[str, StringConstraints(pattern=r"^\d{6}$")]] = None  # needed only with two-factor on
+
+
+class TwoFactorSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+
+
+class TwoFactorCode(_In):
+    code: Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
+
+
+class TwoFactorDisable(_In):
+    password: Annotated[str, StringConstraints(max_length=128)]
+    code: Annotated[str, StringConstraints(pattern=r"^\d{6}$")]
 
 
 class TokenOut(BaseModel):
@@ -72,7 +89,8 @@ class UserCreate(_In):
     name: Name
     email: Email
     password: Password
-    role: UserRole = UserRole.AGENT
+    role: UserRole = UserRole.USER
+    company_id: Optional[int] = None
 
 
 class UserUpdate(_In):
@@ -81,6 +99,8 @@ class UserUpdate(_In):
     role: Optional[UserRole] = None
     is_active: Optional[bool] = None
     password: Optional[Password] = None
+    company_id: Optional[int] = None  # explicit null = no company
+    reset_two_factor: Optional[bool] = None  # true = switch their 2FA off (lost phone); they enrol again
 
     _nn = field_validator("name", "email", "role", "is_active", "password")(_not_null)
 
@@ -120,16 +140,71 @@ class CompanyOut(_Out):
     updated_at: datetime
 
 
+# ---------- Assets ----------
+
+Serial = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
+
+
+class AssetCreate(_In):
+    name: Name
+    type: AssetType
+    serial: Optional[Serial] = None
+    status: AssetStatus = AssetStatus.STOCK
+    assigned_user_id: Optional[int] = None
+    location: Optional[Name] = None
+
+
+class AssetUpdate(_In):
+    name: Optional[Name] = None
+    type: Optional[AssetType] = None
+    serial: Optional[Serial] = None
+    status: Optional[AssetStatus] = None
+    assigned_user_id: Optional[int] = None  # explicit null = nobody
+    location: Optional[Name] = None
+
+    _nn = field_validator("name", "type", "status")(_not_null)
+
+
+class AssetSummary(_Out):
+    id: int
+    code: str
+    name: str
+
+
+class AssetOut(AssetSummary):
+    type: AssetType
+    serial: Optional[str] = None
+    status: AssetStatus
+    assigned_user: Optional[UserSummary] = None
+    location: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AssetPage(BaseModel):
+    items: List[AssetOut]
+    total: int
+    page: int
+    page_size: int
+
+
 # ---------- Tickets ----------
 
 class TicketCreate(_In):
+    """What whoever opens a ticket may fill in.
+
+    End users can only send title, description, category and asset: the company and requester
+    come from their account, and `priority`, `assignee_id` and `requester_id` are for technicians.
+    """
+
     title: Name
     description: Optional[LongText] = None
-    priority: TicketPriority = TicketPriority.MEDIUM
-    company_id: int
-    assignee_id: Optional[int] = None
-    requester_name: Optional[Name] = None
-    requester_email: Optional[Email] = None
+    category: TicketCategory = TicketCategory.OTHER
+    asset_id: Optional[int] = None
+    company_id: Optional[int] = None    # technicians only (end users file under their own company)
+    requester_id: Optional[int] = None  # technicians only: who the ticket is for
+    assignee_id: Optional[int] = None   # technicians only
+    priority: Optional[TicketPriority] = None  # technicians only
 
 
 class TicketUpdate(_In):
@@ -137,12 +212,13 @@ class TicketUpdate(_In):
     description: Optional[LongText] = None
     status: Optional[TicketStatus] = None
     priority: Optional[TicketPriority] = None
+    category: Optional[TicketCategory] = None
     company_id: Optional[int] = None
-    assignee_id: Optional[int] = None  # explicit null = unassign
-    requester_name: Optional[Name] = None
-    requester_email: Optional[Email] = None
+    assignee_id: Optional[int] = None   # explicit null = unassign
+    requester_id: Optional[int] = None  # explicit null = nobody
+    asset_id: Optional[int] = None      # explicit null = no asset
 
-    _nn = field_validator("title", "status", "priority", "company_id")(_not_null)
+    _nn = field_validator("title", "status", "priority", "category", "company_id")(_not_null)
 
 
 class TicketBulkUpdate(_In):
@@ -182,12 +258,18 @@ class EventOut(_Out):
 
 class TicketListItem(_Out):
     id: int
+    code: str
     title: str
     status: TicketStatus
-    priority: TicketPriority
+    priority: Optional[TicketPriority] = None  # none until a technician triages it
+    category: TicketCategory
     company: CompanySummary
+    requester: Optional[UserSummary] = None
     assignee: Optional[UserSummary] = None
+    assignee_id: Optional[int] = None
+    asset_id: Optional[int] = None
     due_at: Optional[datetime] = None
+    resolved_at: Optional[datetime] = None
     is_overdue: bool
     created_at: datetime
     updated_at: datetime
@@ -196,11 +278,9 @@ class TicketListItem(_Out):
 class TicketOut(TicketListItem):
     description: Optional[str] = None
     company_id: int
-    assignee_id: Optional[int] = None
-    requester_name: Optional[str] = None
-    requester_email: Optional[str] = None
+    requester_id: Optional[int] = None
+    asset: Optional[AssetSummary] = None
     created_by: Optional[UserSummary] = None
-    closed_at: Optional[datetime] = None
     comments: List[CommentOut] = []
     events: List[EventOut] = []
 
@@ -217,6 +297,7 @@ class TicketPage(BaseModel):
 class ActivityItem(BaseModel):
     id: int
     ticket_id: int
+    ticket_code: str
     ticket_title: str
     field: str
     old_value: Optional[str] = None
@@ -229,7 +310,10 @@ class Stats(BaseModel):
     total_tickets: int
     active_tickets: int
     by_status: Dict[str, int]
-    by_priority: Dict[str, int]  # active tickets only
+    by_priority: Dict[str, int]  # active tickets that have a priority
+    unprioritized: int           # active tickets still waiting for triage
+    total_assets: int
+    assets_by_status: Dict[str, int]
     overdue: int
     unassigned: int
     mine: int

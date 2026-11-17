@@ -111,3 +111,13 @@ def require_admin(user: CurrentUser) -> models.User:
 
 
 AdminUser = Annotated[models.User, Depends(require_admin)]
+
+
+def require_staff(user: CurrentUser) -> models.User:
+    """Administrators and technicians. End users never get past this."""
+    if not user.is_staff:
+        raise HTTPException(403, "Technicians only")
+    return user
+
+
+StaffUser = Annotated[models.User, Depends(require_staff)]

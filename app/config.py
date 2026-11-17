@@ -7,6 +7,9 @@ PROJECT_DIR = APP_DIR.parent
 
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{PROJECT_DIR / 'tickets.db'}")
 
+# Run pending database migrations when the app starts. Turn off if you migrate as a separate deploy step.
+AUTO_MIGRATE = os.getenv("AUTO_MIGRATE", "1").strip().lower() not in ("0", "false", "no", "off")
+
 # How long a sign-in lasts.
 TOKEN_TTL_HOURS = int(os.getenv("TOKEN_TTL_HOURS", "168"))  # 7 days
 
@@ -25,9 +28,13 @@ SETUP_TOKEN = os.getenv("SETUP_TOKEN", "")
 ENABLE_DOCS = os.getenv("ENABLE_DOCS", "1").strip().lower() not in ("0", "false", "no", "off")
 
 # Time to resolve, per priority, used to compute a ticket's due date.
+# Only technicians set a priority, so a ticket has no due date until one does.
 SLA_HOURS = {
-    "urgent": int(os.getenv("SLA_URGENT_HOURS", "4")),
+    "critical": int(os.getenv("SLA_CRITICAL_HOURS", "4")),
     "high": int(os.getenv("SLA_HIGH_HOURS", "24")),
     "medium": int(os.getenv("SLA_MEDIUM_HOURS", "72")),
     "low": int(os.getenv("SLA_LOW_HOURS", "168")),
 }
+
+# Shown in the authenticator app when a user turns on two-factor sign-in.
+TOTP_ISSUER = os.getenv("TOTP_ISSUER", "DeskPulse")

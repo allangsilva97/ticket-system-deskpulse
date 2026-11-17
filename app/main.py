@@ -7,9 +7,10 @@ from sqlalchemy.exc import DataError
 
 from app import config
 from app.database import init_db
-from app.routers import auth, companies, stats, tickets, users
+from app.routers import assets, auth, companies, stats, tickets, users
 
-STATIC_DIR = config.APP_DIR / "static"
+STATIC_DIR = config.APP_DIR / "static"        # the admin console (/console)
+DESKPULSE_DIR = config.PROJECT_DIR / "deskpulse"  # the DeskPulse portal (/)
 
 
 @asynccontextmanager
@@ -31,6 +32,15 @@ CSP = "; ".join([
     "img-src 'self' data:", "connect-src 'self'", "object-src 'none'",
     "base-uri 'none'", "form-action 'self'", "frame-ancestors 'none'",
 ])
+# DeskPulse builds its styles at runtime with the Tailwind CDN, which needs inline styles; icons and the font
+# come from two CDNs. Scripts are still limited to our own files and those two hosts.
+DESKPULSE_CSP = "; ".join([
+    "default-src 'none'", "script-src 'self' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com",
+    "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com",
+    "font-src https://cdnjs.cloudflare.com https://fonts.gstatic.com", "img-src 'self' data:",
+    "connect-src 'self'", "object-src 'none'", "base-uri 'none'", "form-action 'none'", "frame-ancestors 'none'",
+])
+DESKPULSE_PATHS = ("/deskpulse",)  # plus "/" itself
 DOC_PATHS = ("/docs", "/redoc")  # Swagger UI and ReDoc load their scripts from a CDN, so this policy would break them
 
 
@@ -43,7 +53,10 @@ async def security_headers(request: Request, call_next):
     headers.setdefault("Referrer-Policy", "same-origin")
     headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
     headers.setdefault("Cross-Origin-Opener-Policy", "same-origin")
-    if not request.url.path.startswith(DOC_PATHS):
+    path = request.url.path
+    if path == "/" or path.startswith(DESKPULSE_PATHS):
+        headers.setdefault("Content-Security-Policy", DESKPULSE_CSP)
+    elif not path.startswith(DOC_PATHS):
         headers.setdefault("Content-Security-Policy", CSP)
     if request.url.path.startswith("/api/"):
         headers.setdefault("Cache-Control", "no-store")  # tickets and user lists shouldn't sit in a shared cache
@@ -60,7 +73,7 @@ async def out_of_range(_request: Request, _exc: Exception):
     return JSONResponse(status_code=422, content={"detail": "A numeric value is out of range"})
 
 
-for module in (auth, users, companies, tickets, stats):
+for module in (auth, users, companies, assets, tickets, stats):
     app.include_router(module.router)
 
 
@@ -70,11 +83,18 @@ def health():
 
 
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+app.mount("/deskpulse", StaticFiles(directory=DESKPULSE_DIR), name="deskpulse")
 
 
 @app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 def index():
-    page = STATIC_DIR / "index.html"
+    page = DESKPULSE_DIR / "index.html"
     if page.is_file():
         return FileResponse(page)
     return HTMLResponse("<h1>Ticket System</h1><p>See <a href='/docs'>/docs</a>.</p>")
+
+
+@app.api_route("/console", methods=["GET", "HEAD"], include_in_schema=False)
+def console():
+    """The original administrator console, kept next to DeskPulse."""
+    return FileResponse(STATIC_DIR / "index.html")

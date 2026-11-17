@@ -4,6 +4,7 @@ import tempfile
 # Must be set before the app is imported.
 os.environ["DATABASE_URL"] = f"sqlite:///{tempfile.mkdtemp()}/test.db"
 os.environ["PASSWORD_HASH_ITERATIONS"] = "1000"  # fast hashing for tests
+os.environ["AUTO_MIGRATE"] = "0"  # the fixtures build the tables straight from the models
 
 import pytest  # noqa: E402
 from fastapi.testclient import TestClient  # noqa: E402
@@ -34,16 +35,29 @@ def admin(client):
     return client
 
 
+def _make_account(admin, role, name, email, password, company_id=None):
+    body = {"name": name, "email": email, "password": password, "role": role, "company_id": company_id}
+    user = admin.post("/api/users", json=body).json()
+    token = admin.post("/api/auth/login", json={"email": email, "password": password}).json()["token"]
+    return user, {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture
-def make_agent(admin):
-    """Create an agent and return (user, headers)."""
-    def _make(name="Alex Agent", email="alex@example.com", password="agent-pass-123"):
-        user = admin.post("/api/users", json={"name": name, "email": email, "password": password}).json()
-        token = admin.post("/api/auth/login", json={"email": email, "password": password}).json()["token"]
-        return user, {"Authorization": f"Bearer {token}"}
+def make_tech(admin):
+    """Create a technician and return (user, headers)."""
+    def _make(name="Alex Tech", email="alex@example.com", password="tech-pass-123"):
+        return _make_account(admin, "technician", name, email, password)
     return _make
 
 
 @pytest.fixture
 def company(admin):
     return admin.post("/api/companies", json={"name": "Acme"}).json()
+
+
+@pytest.fixture
+def make_user(admin, company):
+    """Create an end user at the Acme company and return (user, headers)."""
+    def _make(name="Sarah User", email="sarah@example.com", password="user-pass-123"):
+        return _make_account(admin, "user", name, email, password, company["id"])
+    return _make

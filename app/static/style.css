@@ -158,7 +158,7 @@ button.stat-card:hover { transform: translateY(-2px); }
 .bar-value { text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
 .bar-track { height: 10px; background: var(--border-soft); border-radius: 5px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; border-radius: 5px; min-width: 2px; transition: width 0.4s; }
-.bar-urgent { background: var(--danger); }
+.bar-critical { background: var(--danger); }
 .bar-high { background: var(--b-high); }
 .bar-medium { background: #fdcb6e; }
 .bar-low { background: var(--b-low); }
@@ -230,15 +230,16 @@ td.empty { text-align: center; color: var(--muted); padding: 2.5rem 1rem; }
 .badge-open        { background: var(--b-open-bg); color: var(--b-open); }
 .badge-in_progress { background: var(--b-progress-bg); color: var(--b-progress); }
 .badge-waiting     { background: var(--b-waiting-bg); color: var(--b-waiting); }
-.badge-closed      { background: var(--b-closed-bg); color: var(--b-closed); }
+.badge-closed, .badge-resolved { background: var(--b-closed-bg); color: var(--b-closed); }
+.badge-none { background: transparent; color: var(--muted); border: 1px dashed var(--border); }
 .badge-low    { background: var(--b-low-bg); color: var(--b-low); }
 .badge-medium { background: var(--b-medium-bg); color: var(--b-medium); }
 .badge-high   { background: var(--b-high-bg); color: var(--b-high); }
-.badge-urgent, .badge-overdue { background: var(--danger); color: #fff; }
+.badge-critical, .badge-overdue { background: var(--danger); color: #fff; }
 .badge-overdue { text-transform: none; }
 .badge-internal { background: var(--b-medium-bg); color: var(--b-medium); }
 .badge-role-admin { background: var(--primary); color: #fff; }
-.badge-role-agent { background: var(--b-low-bg); color: var(--b-low); }
+.badge-role-technician, .badge-role-user { background: var(--b-low-bg); color: var(--b-low); }
 
 /* ---------- Buttons ---------- */
 .btn {

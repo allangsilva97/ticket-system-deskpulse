@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="light dark">
+    <meta name="referrer" content="no-referrer">
+    <meta name="description" content="DeskPulse - help desk de TI e inventário de ativos (CMDB).">
+    <title>DeskPulse - Help Desk de TI &amp; Inventário de Ativos</title>
+
+    <!-- Apply the saved / system theme before first paint (avoids a light-mode flash) -->
+    <script src="/deskpulse/theme.js"></script>
+
+    <!-- Tailwind CSS (Play CDN: fine for a prototype; precompile with the Tailwind CLI for production) -->
+    <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+    <script src="/deskpulse/tailwind-config.js"></script>
+
+    <!-- QR code generator for the 2FA setup (optional: without it the secret is shown as text) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha512-ZDSPMa/JM1D+7kdg2x3BsruQ6T/JpJo3jWDWkCZsP+5yVyp1KfESqLI+7RqB5k24F7p2cV7i2YHh/890y6P6Sw==" crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+
+    <!-- Font Awesome Free icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" integrity="sha512-iecdLmaskl7CVkqkXNQ/ZH/XLlvWZOJyj7Yy7tcenmpD1ypASozpmT/E0iPtmFIB46ZmdtAc9eNBvH0H/ZpiBw==" crossorigin="anonymous" referrerpolicy="no-referrer">
+    <!-- Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        html.dark { color-scheme: dark; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 9999px; }
+        .dark ::-webkit-scrollbar-thumb { background: #475569; }
+        :focus-visible { outline: 2px solid #6366f1; outline-offset: 2px; }
+
+        /* Overlays are toggled only with .hidden; the flex layout applies whenever they are visible */
+        .modal-overlay:not(.hidden) { display: flex; }
+        @keyframes pop-in { from { opacity: 0; transform: translateY(6px) scale(.97); } to { opacity: 1; transform: none; } }
+        .modal-panel { animation: pop-in .15s ease-out; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+        }
+    </style>
+
+    <!-- Reusable component classes: replaces the long class strings that were copy-pasted everywhere -->
+    <style type="text/tailwindcss">
+        @layer components {
+            .field-label { @apply block text-xs font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-400 mb-1; }
+            .field { @apply block w-full px-4 py-2.5 rounded-xl border border-slate-300 dark:border-slate-600 bg-slate-50 dark:bg-slate-900 text-sm placeholder:text-slate-500 dark:placeholder:text-slate-400 focus:outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/30 read-only:opacity-70 disabled:opacity-60; }
+            .btn { @apply inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition disabled:opacity-50 disabled:cursor-not-allowed; }
+            .btn-sm { @apply px-3 py-1.5 text-xs rounded-lg; }
+            .btn-primary { @apply bg-brand-600 hover:bg-brand-700 text-white shadow-md shadow-brand-500/20; }
+            .btn-secondary { @apply bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700; }
+            .btn-danger { @apply bg-rose-600 hover:bg-rose-700 text-white; }
+            .btn-dark { @apply bg-slate-900 hover:bg-slate-800 dark:bg-slate-700 dark:hover:bg-slate-600 text-white; }
+            .btn-ghost { @apply bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200; }
+            .btn-ghost-danger { @apply bg-rose-50 dark:bg-rose-900/40 text-rose-700 dark:text-rose-300 hover:bg-rose-100 dark:hover:bg-rose-900/60; }
+            .card { @apply bg-white dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700 shadow-sm; }
+            .badge { @apply inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold whitespace-nowrap; }
+            .th { @apply pb-3 pr-3 font-semibold whitespace-nowrap; }
+            .td { @apply py-3 pr-3; }
+            .link { @apply text-brand-600 dark:text-brand-400 font-semibold hover:underline; }
+            .muted { @apply text-slate-600 dark:text-slate-400; }
+            .modal-overlay { @apply fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm items-center justify-center p-4; }
+            .modal-panel { @apply relative w-full bg-white dark:bg-slate-800 rounded-2xl shadow-2xl p-6 sm:p-8 border border-slate-100 dark:border-slate-700 max-h-[90vh] overflow-y-auto; }
+            .modal-close { @apply absolute top-4 right-4 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-500 hover:text-slate-800 hover:bg-slate-100 dark:text-slate-400 dark:hover:text-slate-100 dark:hover:bg-slate-700; }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-200 min-h-screen flex flex-col antialiased">
+
+    <button type="button" data-action="skip-main" class="sr-only focus:not-sr-only focus:fixed focus:top-2 focus:left-2 focus:z-[70] focus:px-4 focus:py-2 focus:rounded-lg focus:bg-brand-600 focus:text-white">Ir para o conteúdo principal</button>
+
+    <!-- Toast notifications (announced politely to screen readers) -->
+    <div id="toast-container" class="fixed top-5 right-5 z-[60] flex flex-col gap-2 pointer-events-none" aria-live="polite"></div>
+
+    <div id="app" class="flex-1 flex flex-col">
+
+        <!-- ================= NAVBAR ================= -->
+        <header class="bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 sticky top-0 z-30">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+                <a href="#/home" class="flex items-center gap-3" aria-label="Página inicial do DeskPulse">
+                    <span class="w-10 h-10 rounded-xl bg-brand-600 flex items-center justify-center text-white shadow-md shadow-brand-500/30">
+                        <i class="fa-solid fa-server text-lg" aria-hidden="true"></i>
+                    </span>
+                    <span>
+                        <span class="font-bold text-lg tracking-tight">Desk<span class="text-brand-600 dark:text-brand-400">Pulse</span></span>
+                        <span class="hidden sm:inline-block text-xs px-2 py-0.5 ml-2 bg-brand-50 dark:bg-brand-900/40 text-brand-700 dark:text-brand-300 font-medium rounded-full">ITSM &amp; CMDB</span>
+                    </span>
+                </a>
+
+                <div class="flex items-center gap-2 sm:gap-3">
+                    <button id="theme-toggle" type="button" data-action="toggle-theme" class="w-10 h-10 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition">
+                        <i id="theme-icon" class="fa-solid fa-moon" aria-hidden="true"></i>
+                    </button>
+                    <div id="header-actions" class="flex items-center gap-2"><!-- rendered by JS --></div>
+                </div>
+            </div>
+        </header>
+
+        <!-- ================= VIEW CONTAINER ================= -->
+        <main id="main" tabindex="-1" class="flex-1 flex flex-col focus:outline-none">
+            <div id="view" class="flex-1 flex flex-col"><!-- rendered by JS --></div>
+        </main>
+
+        <footer class="text-center text-xs text-slate-600 dark:text-slate-400 py-4 px-4 border-t border-slate-200 dark:border-slate-800">
+            DeskPulse &mdash; help desk de TI e inventário de ativos. O envio de e-mails (recuperação de senha, avisos) ainda não está configurado.
+        </footer>
+    </div>
+
+    <!-- ================= MODALS ================= -->
+
+    <!-- Sign in -->
+    <div id="login-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="login-title">
+        <div class="modal-panel max-w-md">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="login-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div class="text-center mb-6">
+                <div class="w-12 h-12 bg-brand-50 dark:bg-brand-900/50 text-brand-600 dark:text-brand-400 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
+                    <i class="fa-solid fa-lock" aria-hidden="true"></i>
+                </div>
+                <h3 id="login-title" class="text-xl font-bold">Entrar no DeskPulse</h3>
+                <p id="login-subtitle" class="text-sm muted mt-1">Use a conta criada pelo administrador. A senha diferencia maiúsculas de minúsculas.</p>
+            </div>
+            <p id="login-error" class="hidden mb-4 p-3 rounded-xl bg-rose-50 dark:bg-rose-900/30 text-rose-800 dark:text-rose-300 text-sm" role="alert"></p>
+            <form id="login-step2" data-form="login-2fa" class="hidden space-y-4">
+                <div class="p-3 rounded-xl bg-brand-50 dark:bg-brand-900/30 text-sm text-brand-800 dark:text-brand-200 flex gap-2">
+                    <i class="fa-solid fa-mobile-screen-button mt-0.5" aria-hidden="true"></i>
+                    <span>Digite o código de 6 dígitos do seu aplicativo autenticador.</span>
+                </div>
+                <div>
+                    <label for="login-code" class="field-label">Código de verificação</label>
+                    <input type="text" id="login-code" required inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456" class="field font-mono text-center text-lg tracking-[0.4em]">
+                </div>
+                <div class="flex gap-3">
+                    <button type="button" data-action="login-back" class="btn btn-secondary">Voltar</button>
+                    <button type="submit" class="btn btn-primary flex-1 py-3">Verificar e entrar</button>
+                </div>
+            </form>
+            <form id="login-step1" data-form="login" class="space-y-4">
+                <div id="login-name-wrap" class="hidden">
+                    <label for="login-name" class="field-label">Seu nome</label>
+                    <input type="text" id="login-name" maxlength="255" autocomplete="name" class="field">
+                </div>
+                <div id="login-setup-wrap" class="hidden">
+                    <label for="login-setup-code" class="field-label">Código de instalação</label>
+                    <input type="password" id="login-setup-code" maxlength="255" autocomplete="off" class="field">
+                </div>
+                <div>
+                    <label for="login-email" class="field-label">Endereço de e-mail</label>
+                    <input type="email" id="login-email" required autocomplete="username" class="field">
+                </div>
+                <div>
+                    <label for="login-password" class="field-label">Senha</label>
+                    <input type="password" id="login-password" required maxlength="128" autocomplete="current-password" class="field">
+                </div>
+                <div class="flex items-center justify-between text-xs pt-1">
+                    <label class="flex items-center gap-2 cursor-pointer muted">
+                        <input type="checkbox" id="login-remember" checked class="accent-brand-600 w-4 h-4"> Manter conectado neste dispositivo
+                    </label>
+                    <button type="button" data-action="forgot-password" class="link">Esqueceu a senha?</button>
+                </div>
+                <button type="submit" id="login-submit" class="btn btn-primary w-full py-3">Entrar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Password reset -->
+    <div id="forgot-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="forgot-title">
+        <div class="modal-panel max-w-md">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="forgot-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div class="text-center mb-6">
+                <div class="w-12 h-12 bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 rounded-full flex items-center justify-center mx-auto mb-3 text-xl">
+                    <i class="fa-solid fa-key" aria-hidden="true"></i>
+                </div>
+                <h3 id="forgot-title" class="text-xl font-bold">Redefinir senha</h3>
+                <p class="text-sm muted mt-1">Informe seu e-mail. A recuperação automática por e-mail ainda não está disponível.</p>
+            </div>
+            <form data-form="forgot" class="space-y-4">
+                <div>
+                    <label for="reset-email" class="field-label">Endereço de e-mail</label>
+                    <input type="email" id="reset-email" required placeholder="nome@empresa.com" autocomplete="email" class="field">
+                </div>
+                <button type="submit" class="btn btn-primary w-full py-3">Continuar</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- New ticket -->
+    <div id="ticket-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="ticket-modal-title">
+        <div class="modal-panel max-w-lg">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="ticket-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div class="mb-6 pr-8">
+                <h3 id="ticket-modal-title" class="text-xl font-bold flex items-center gap-2"><i class="fa-solid fa-ticket text-brand-600 dark:text-brand-400" aria-hidden="true"></i> Abrir um novo chamado de suporte</h3>
+                <p class="text-sm muted mt-1">Descreva o problema e nossa equipe de TI entrará em contato.</p>
+            </div>
+            <form id="ticket-form" data-form="new-ticket" class="space-y-4">
+                <div id="tf-staff-fields" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="tf-requester" class="field-label">Solicitante</label>
+                        <select id="tf-requester" class="field"></select>
+                    </div>
+                    <div>
+                        <label for="tf-company" class="field-label">Empresa</label>
+                        <select id="tf-company" class="field"></select>
+                    </div>
+                </div>
+                <div>
+                    <label for="tf-subject" class="field-label">Assunto / resumo do problema</label>
+                    <input type="text" id="tf-subject" required maxlength="120" placeholder="ex.: falha na conexão da VPN" class="field">
+                </div>
+                <div>
+                    <label for="tf-category" class="field-label">Categoria</label>
+                    <select id="tf-category" class="field"></select>
+                    <p class="text-xs muted mt-1">A prioridade é definida pela equipe de TI ao analisar o chamado.</p>
+                </div>
+                <div id="tf-asset-wrap">
+                    <label for="tf-asset" class="field-label">Ativo relacionado (opcional)</label>
+                    <select id="tf-asset" class="field"></select>
+                </div>
+                <div>
+                    <label for="tf-desc" class="field-label">Descrição detalhada</label>
+                    <textarea id="tf-desc" rows="4" required maxlength="2000" placeholder="Passos para reproduzir, mensagens de erro, quando começou..." class="field"></textarea>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal="ticket-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Enviar chamado</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Ticket detail & timeline -->
+    <div id="ticket-detail-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="td-title">
+        <div class="modal-panel max-w-2xl">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="ticket-detail-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div id="ticket-detail-body"><!-- rendered by JS --></div>
+        </div>
+    </div>
+
+    <!-- Add / edit asset -->
+    <div id="asset-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="asset-modal-title">
+        <div class="modal-panel max-w-lg">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="asset-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div class="mb-6 pr-8">
+                <h3 id="asset-modal-title" class="text-xl font-bold">Adicionar novo ativo</h3>
+                <p class="text-sm muted mt-1">Cadastre um equipamento ou uma licença de software no CMDB.</p>
+            </div>
+            <form id="asset-form" data-form="asset" class="space-y-4">
+                <input type="hidden" id="asset-id">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="ast-name" class="field-label">Nome do ativo</label>
+                        <input type="text" id="ast-name" required maxlength="80" placeholder="MacBook Pro 16" class="field">
+                    </div>
+                    <div>
+                        <label for="ast-type" class="field-label">Tipo</label>
+                        <select id="ast-type" class="field"></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="ast-serial" class="field-label">Nº de série / patrimônio</label>
+                        <input type="text" id="ast-serial" required maxlength="60" placeholder="SN-998234-X" class="field font-mono">
+                    </div>
+                    <div>
+                        <label for="ast-status" class="field-label">Status</label>
+                        <select id="ast-status" class="field"></select>
+                    </div>
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="ast-assigned" class="field-label">Usuário responsável</label>
+                        <select id="ast-assigned" class="field"></select>
+                    </div>
+                    <div>
+                        <label for="ast-location" class="field-label">Local / departamento</label>
+                        <input type="text" id="ast-location" maxlength="255" placeholder="ex.: Rack 4, 3º andar" class="field">
+                    </div>
+                </div>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal="asset-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar ativo</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add / edit user -->
+    <div id="user-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="user-modal-title">
+        <div class="modal-panel max-w-md">
+            <button type="button" class="modal-close" data-action="close-modal" data-modal="user-modal" aria-label="Fechar janela"><i class="fa-solid fa-xmark text-xl" aria-hidden="true"></i></button>
+            <div class="mb-6 pr-8">
+                <h3 id="user-modal-title" class="text-xl font-bold">Adicionar novo usuário</h3>
+                <p class="text-sm muted mt-1">Crie uma conta de usuário e defina as permissões.</p>
+            </div>
+            <form id="user-form" data-form="user" class="space-y-4">
+                <input type="hidden" id="usr-id">
+                <div>
+                    <label for="usr-name" class="field-label">Nome completo</label>
+                    <input type="text" id="usr-name" required maxlength="80" placeholder="Maria Souza" class="field">
+                </div>
+                <div>
+                    <label for="usr-email" class="field-label">Endereço de e-mail</label>
+                    <input type="email" id="usr-email" required maxlength="120" placeholder="maria@empresa.com" class="field">
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                        <label for="usr-role" class="field-label">Perfil de acesso</label>
+                        <select id="usr-role" class="field"></select>
+                    </div>
+                    <div>
+                        <label for="usr-status" class="field-label">Status da conta</label>
+                        <select id="usr-status" class="field"></select>
+                    </div>
+                </div>
+                <div>
+                    <label for="usr-company" class="field-label">Empresa (usuários finais abrem chamados por ela)</label>
+                    <select id="usr-company" class="field"></select>
+                </div>
+                <div>
+                    <label for="usr-password" class="field-label">Senha</label>
+                    <input type="password" id="usr-password" minlength="8" maxlength="128" autocomplete="new-password" class="field">
+                    <p id="usr-password-hint" class="text-xs muted mt-1"></p>
+                </div>
+                <label id="usr-2fa-reset-wrap" class="hidden flex items-center gap-2 text-xs muted cursor-pointer w-fit">
+                    <input type="checkbox" id="usr-2fa-reset" class="accent-brand-600 w-4 h-4"> Redefinir o 2FA (o usuário precisará configurá-lo de novo)
+                </label>
+                <p id="usr-self-note" class="hidden text-xs muted"><i class="fa-solid fa-circle-info" aria-hidden="true"></i> Você não pode alterar seu próprio perfil ou status.</p>
+                <div class="flex justify-end gap-3 pt-2">
+                    <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal="user-modal">Cancelar</button>
+                    <button type="submit" class="btn btn-primary">Salvar usuário</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Generic confirmation (replaces the native confirm()) -->
+    <div id="confirm-modal" class="modal-overlay hidden" role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" aria-describedby="confirm-message">
+        <div class="modal-panel max-w-sm">
+            <h3 id="confirm-title" class="text-lg font-bold"></h3>
+            <p id="confirm-message" class="text-sm muted mt-2"></p>
+            <div class="flex justify-end gap-3 mt-6">
+                <button type="button" class="btn btn-secondary" data-action="close-modal" data-modal="confirm-modal" data-autofocus>Cancelar</button>
+                <button type="button" id="confirm-yes" class="btn btn-danger" data-action="confirm-yes">Confirmar</button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ================= APPLICATION ================= -->
+    <script src="/deskpulse/app.js"></script>
+</body>
+</html>
